@@ -10,7 +10,7 @@ import time
 import pandas as pd
 import datetime
 from concurrent.futures import ThreadPoolExecutor
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
@@ -89,15 +89,14 @@ SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googlea
 
 def get_credentials():
     try:
-        return Credentials(
-            token=None,
-            refresh_token=st.secrets["google_oauth"]["refresh_token"],
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=st.secrets["google_oauth"]["client_id"],
-            client_secret=st.secrets["google_oauth"]["client_secret"]
+        # 서비스 계정 전용 시크릿 딕셔너리 로드
+        sa_info = dict(st.secrets["google_service_account"])
+        creds = service_account.Credentials.from_service_account_info(
+            sa_info, scopes=SCOPES
         )
+        return creds
     except Exception as e:
-        st.error(f"[오류] 구글 OAuth 인증 정보 로드 실패: {e}")
+        st.error(f"[오류] 구글 서비스 계정 인증 정보 로드 실패: {e}")
         return None
 
 # ==========================================
@@ -268,7 +267,6 @@ with tab1:
         st.markdown("### ⌨️ 텍스트 기반 AI 검색 (정숙 모드)")
         st.info("사이드바의 '보조 텍스트 검색' 창에 검색어를 입력하고 엔터를 누르세요.")
 
-    # 사이드바에서 입력한 수동 검색 처리
     if manual_submit and manual_query:
         process_audit_query(query_text=manual_query, is_voice_active=use_voice_mode)
 
