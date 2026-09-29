@@ -22,13 +22,10 @@ st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", lay
 custom_theme_css = """
 <style>
 @media screen {
-    /* 전체 텍스트 폰트 및 색상 */
     html, body, [class*="css"] {
         color: #1e293b !important;
         font-family: 'Pretendard', -apple-system, sans-serif !important;
     }
-    
-    /* 사이드바 WEB MIS 스타일 (다크 네이비) */
     [data-testid="stSidebar"] {
         background-color: #0b2545 !important;
         border-right: 1px solid #000000 !important;
@@ -36,12 +33,9 @@ custom_theme_css = """
     [data-testid="stSidebar"] * {
         color: #ffffff !important;
     }
-    /* 사이드바 내 입력창 텍스트는 검은색으로 유지 */
     [data-testid="stSidebar"] input {
         color: #000000 !important;
     }
-    
-    /* 탭(Tab) 모던 스타일 */
     .stTabs [data-baseweb="tab-list"] {
         border-bottom: 2px solid #e2e8f0 !important;
         gap: 8px;
@@ -58,8 +52,6 @@ custom_theme_css = """
         border-bottom: 3px solid #0b2545 !important;
         color: #0b2545 !important;
     }
-    
-    /* 데이터프레임/표 세련된 테두리 */
     table {
         border: 2px solid #0b2545 !important;
         border-radius: 8px !important;
@@ -82,14 +74,13 @@ try:
     DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
     genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
-    st.error("🚨 [시스템 오류] st.secrets에서 API 키 또는 폴더 ID를 찾을 수 없습니다. secrets.toml 파일을 확인해주세요.")
+    st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다. secrets.toml 파일을 확인해주세요.")
     st.stop()
 
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def get_credentials():
     try:
-        # 서비스 계정 전용 시크릿 딕셔너리 로드
         sa_info = dict(st.secrets["google_service_account"])
         creds = service_account.Credentials.from_service_account_info(
             sa_info, scopes=SCOPES
@@ -104,11 +95,10 @@ def get_credentials():
 # ==========================================
 with st.sidebar:
     st.markdown("## 🥛 YONSEI DAIRY")
-    st.markdown("#### 스마트 해썹(HACCP) 심사망")
+    st.markdown("#### 스마트 해썹(HACCP) 현장 심사포털")
     st.markdown("---")
     
     st.markdown("### 🎛️ 심사 환경 제어")
-    st.caption("심사관의 성향에 맞춰 음성 브리핑 여부를 선택하세요.")
     use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
     
     if use_voice_mode:
@@ -118,8 +108,7 @@ with st.sidebar:
         
     st.markdown("---")
     st.markdown("### ⌨️ 보조 텍스트 검색")
-    st.caption("마이크 사용이 불가할 때 입력하세요.")
-    manual_query = st.text_input("서류명 또는 질문 입력:", placeholder="예: 상수도 수질검사표 열어줘", label_visibility="collapsed")
+    manual_query = st.text_input("서류명 또는 질문 입력:", placeholder="예: 수질검사 성적서 보여줘", label_visibility="collapsed")
     manual_submit = st.button("문서 검색 🚀", use_container_width=True)
 
 # ==========================================
@@ -277,18 +266,20 @@ with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
     
     FOLDER_DB = {
-        "1. HACCP 및 영업허가 서류": {
-            "영업허가 및 등록증": "folder_id_1a",
-            "HACCP 인증서 및 기준서": "folder_id_1b"
+        "1. 인허가 및 인증 서류": {
+            "인허가 서류": "folder_id_1a",
+            "인증서": "folder_id_1b",
+            "PL보험가입증서": "folder_id_1c"
         },
-        "2. 현장 모니터링 및 일지": {
-            "CCP 공정 모니터링 일지": "folder_id_2a",
-            "세척/소독(CIP) 점검표": "folder_id_2b"
+        "2. 위생 및 환경 관리": {
+            "수질검사": "folder_id_2a",
+            "물탱크청소": "folder_id_2b",
+            "방충방서 관련 서류": "folder_id_2c"
         },
-        "3. 법정 검사 및 성적서": {
-            "설비 검교정 성적서": "folder_id_3a",
-            "용수/수질 검사 성적서": "folder_id_3b",
-            "종사자 건강진단서(보건증)": "folder_id_3c"
+        "3. 공장 운영 및 이력": {
+            "설비이력": "folder_id_3a",
+            "교육수료증": "folder_id_3b",
+            "생산실적보고": "folder_id_3c"
         }
     }
     
@@ -332,9 +323,10 @@ with tab3:
     
     validity_db = [
         {"분류": "인증/허가", "서류명": "식품제조가공업 영업등록증", "최근발급일": "2015-05-20", "법정주기(개월)": 0},
+        {"분류": "인증/허가", "서류명": "품목제조보고서", "최근발급일": "2024-01-10", "법정주기(개월)": 0},
         {"분류": "현장검사", "서류명": "지하수 수질검사 성적서", "최근발급일": "2026-03-01", "법정주기(개월)": 6},
-        {"분류": "작업자", "서류명": "종사자 보건증", "최근발급일": "2025-10-15", "법정주기(개월)": 12},
-        {"분류": "현장검사", "서류명": "살균기 온도계 검교정", "최근발급일": "2025-11-20", "법정주기(개월)": 12}
+        {"분류": "작업자", "서류명": "종사자 건강진단서(보건증)", "최근발급일": "2025-10-15", "법정주기(개월)": 12},
+        {"분류": "현장검사", "서류명": "살균기 검교정 성적서", "최근발급일": "2025-11-20", "법정주기(개월)": 12}
     ]
     
     df_validity = pd.DataFrame(validity_db)
