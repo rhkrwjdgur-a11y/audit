@@ -77,6 +77,10 @@ except Exception as e:
     st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다. secrets.toml 파일을 확인해주세요.")
     st.stop()
 
+# 💡 검증된 최신 모델명 상수 정의
+MODEL_NAME = "gemini-3.8-flash"
+MODEL_NAME_FLASH = "gemini-3.5-flash-lite"
+
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def get_credentials():
@@ -152,7 +156,8 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
     service = get_drive_service()
     if not service: return
 
-    model = genai.GenerativeModel(model_name="gemini-3.6-pro", generation_config={"temperature": 0.0})
+    # 💡 검증된 모델명 적용 (intent 분석에는 flash-lite 또는 flash 사용)
+    model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
     
     with st.spinner("심사관 요청 분석 중..."):
         t_start = time.time()
