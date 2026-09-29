@@ -10,7 +10,7 @@ import time
 import pandas as pd
 import datetime
 from concurrent.futures import ThreadPoolExecutor
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
@@ -81,13 +81,16 @@ SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def get_credentials():
     try:
-        sa_info = dict(st.secrets["google_service_account"])
-        creds = service_account.Credentials.from_service_account_info(
-            sa_info, scopes=SCOPES
+        creds = Credentials(
+            token=None,
+            refresh_token=st.secrets["google_oauth"]["refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=st.secrets["google_oauth"]["client_id"],
+            client_secret=st.secrets["google_oauth"]["client_secret"]
         )
         return creds
     except Exception as e:
-        st.error(f"[오류] 구글 서비스 계정 인증 정보 로드 실패: {e}")
+        st.error(f"[오류] 구글 OAuth 인증 정보 로드 실패: {e}")
         return None
 
 # ==========================================
