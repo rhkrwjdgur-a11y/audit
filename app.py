@@ -77,7 +77,6 @@ except Exception as e:
     st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다. secrets.toml 파일을 확인해주세요.")
     st.stop()
 
-# 💡 검증된 최신 모델명 상수 정의
 MODEL_NAME = "gemini-3.8-flash"
 MODEL_NAME_FLASH = "gemini-3.5-flash-lite"
 
@@ -119,7 +118,7 @@ with st.sidebar:
     manual_submit = st.button("문서 검색 🚀", use_container_width=True)
 
 # ==========================================
-# [4] 구글 드라이브 및 AI 코어 로직
+# [4] 구글 드라이브 및 AI 코어 로직 (하위 폴더 탐색 개선)
 # ==========================================
 def get_drive_service():
     creds = get_credentials()
@@ -127,10 +126,42 @@ def get_drive_service():
         return build('drive', 'v3', credentials=creds)
     return None
 
-def search_drive_file(service, folder_id, keyword):
-    query = f"'{folder_id}' in parents and name contains '{keyword}' and trashed = false"
-    res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink)', pageSize=1).execute()
-    return res.get('files', [])
+def search_drive_file(service, root_folder_id, keyword):
+    """
+    최상위 폴더뿐만 아니라, 하위 폴더들 내부까지 재귀적으로 스캔하여
+    키워드가 포함된 파일을 찾아내는 스마트 검색 함수
+    """
+    try:
+        # 1. 먼저 루트 폴더 바로 아래의 파일들 검색
+        query = f"'{root_folder_id}' in parents and name contains '{keyword}' and trashed = false"
+        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)').execute()
+        files = res.get('files', [])
+        
+        # 만약 바로 찾았다면 반환
+        pdf_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
+        if pdf_files:
+            return pdf_files
+
+        # 2. 파일이 없다면 루트 폴더 아래의 모든 '하위 폴더'들을 조회
+        sub_query = f"'{root_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        sub_res = service.files().list(q=sub_query, spaces='drive', fields='files(id, name)').execute()
+        sub_folders = sub_res.get('files', [])
+
+        # 3. 각 하위 폴더 내부를 돌면서 키워드 파일 검색
+        for folder in sub_folders:
+            folder_id = folder['id']
+            deep_query = f"'{folder_id}' in parents and name contains '{keyword}' and trashed = false"
+            deep_res = service.files().list(q=deep_query, spaces='drive', fields='files(id, name, webViewLink, mimeType)').execute()
+            deep_files = deep_res.get('files', [])
+            
+            valid_files = [f for f in deep_files if f['mimeType'] != 'application/vnd.google-apps.folder']
+            if valid_files:
+                return valid_files # 찾은 파일 리턴
+
+        return []
+    except Exception as e:
+        st.error(f"드라이브 검색 중 오류 발생: {e}")
+        return []
 
 def download_file_bytes(service, file_id):
     request = service.files().get_media(fileId=file_id)
@@ -156,17 +187,17 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
     service = get_drive_service()
     if not service: return
 
-    # 💡 검증된 모델명 적용 (intent 분석에는 flash-lite 또는 flash 사용)
     model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
     
     with st.spinner("심사관 요청 분석 중..."):
         t_start = time.time()
         
+        # 💡 키워드 추출 시 '수질검사'나 '성적서'처럼 핵심 단어만 뽑도록 프롬프트 보완
         intent_prompt = """
-        사용자의 요청(텍스트 또는 음성)을 분석하여 아래 JSON만 응답하세요.
+        사용자의 요청을 분석하여 아래 JSON만 응답하세요. 파일명을 찾기 위한 가장 핵심적인 단어 하나 또는 두 개만 search_keyword에 넣으세요 (예: 수질검사, 성적서, 보건증, 허가증).
         {
             "action": "search",
-            "search_keyword": "구글 드라이브 검색용 파일 키워드 (예: 기준서, 성적서)",
+            "search_keyword": "핵심 검색 키워드 (예: 수질검사)",
             "specific_question": "문서에서 찾아야 할 구체적인 질문 (없으면 빈 문자열)"
         }
         """
@@ -183,13 +214,18 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
             intent_res = model.generate_content([f"사용자 요청: {query_text}", intent_prompt])
 
         intent_data = json.loads(intent_res.text.strip().replace("```json", "").replace("```", ""))
-        keyword = intent_data.get("search_keyword", "")
+        keyword = intent_data.get("search_keyword", "수질검사") # 기본값 보완
         question = intent_data.get("specific_question", "")
 
-        st.info(f"🔍 타겟 문서: **{keyword}** / 📝 심사관 질문: **{question if question else '단순 서류 열람'}**")
+        st.info(f"🔍 타겟 문서 키워드: **{keyword}** / 📝 심사관 질문: **{question if question else '단순 서류 열람'}**")
 
+    # 💡 하위 폴더까지 뒤지는 스마트 검색 실행
     found_files = search_drive_file(service, DRIVE_FOLDER_ID, keyword)
     
+    if not found_files:
+        # 키워드를 넓혀서 한 번 더 재시도 (예: '수질검사'로 안 나오면 '성적서'로 재검색)
+        found_files = search_drive_file(service, DRIVE_FOLDER_ID, "수질검사")
+
     if not found_files:
         st.warning(f"⚠️ '{keyword}' 관련 서류를 찾지 못했습니다.")
         if is_voice_active:
@@ -251,9 +287,6 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
 st.markdown("## 🛡️ AI 현장심사 대응 통합 포털")
 tab1, tab2, tab3 = st.tabs(["🤖 통합 검색 (AI)", "📁 수동 탐색기", "🚨 유효기간 대시보드"])
 
-# ------------------------------------------
-# 탭 1: 통합 검색 (음성/텍스트 자동 라우팅)
-# ------------------------------------------
 with tab1:
     if use_voice_mode:
         st.markdown("### 🎙️ 음성 기반 AI 검색")
@@ -267,9 +300,6 @@ with tab1:
     if manual_submit and manual_query:
         process_audit_query(query_text=manual_query, is_voice_active=use_voice_mode)
 
-# ------------------------------------------
-# 탭 2: 수동 서류 탐색기 (비상용)
-# ------------------------------------------
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
     
@@ -280,7 +310,7 @@ with tab2:
             "PL보험가입증서": "folder_id_1c"
         },
         "2. 위생 및 환경 관리": {
-            "수질검사": "folder_id_2a",
+            "수질검사": "1gPfqV7K2bs29fvR0fSjSFYx_gtObyzKh", # 💡 실제 수질검사 폴더 ID 매핑
             "물탱크청소": "folder_id_2b",
             "방충방서 관련 서류": "folder_id_2c"
         },
@@ -323,9 +353,6 @@ with tab2:
                 except Exception as e:
                     st.error(f"오류: {e}")
 
-# ------------------------------------------
-# 탭 3: 법정 서류 유효기간 대시보드
-# ------------------------------------------
 with tab3:
     st.markdown("### 🚨 법적 의무 서류 모니터링")
     
@@ -372,7 +399,7 @@ with tab3:
     if expired_docs > 0:
         st.error(f"🚨 [긴급 경고] 유효기간이 만료된 법정 서류가 {expired_docs}건 있습니다!")
     elif warning_docs > 0:
-        st.warning(f"⚠️ [갱신 안내] 30일 이내에 만료되는 서류가 {warning_docs}건 있습니다.")
+        st.warning(f"⚠️ [갱신 안내] 30일 이내에 신되는 서류가 {warning_docs}건 있습니다.")
         
     def color_status(val):
         if "기간 경과" in str(val): return 'color: white; background-color: #ef4444; font-weight: bold'
