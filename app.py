@@ -67,44 +67,40 @@ custom_theme_css = """
 st.markdown(custom_theme_css, unsafe_allow_html=True)
 
 # ==========================================
-# [2] 철통 보안: st.secrets를 통한 API 및 권한 로드
+# [2] 보안 설정 및 Pro 모델 선언
 # ==========================================
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
     genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
-    st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다. secrets.toml 파일을 확인해주세요.")
+    st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다.")
     st.stop()
 
-MODEL_NAME = "gemini-3.8-flash"
-MODEL_NAME_FLASH = "gemini-3.5-flash-lite"
-
+# 💡 속도와 정확도를 모두 잡기 위해 Pro 모델 재도입
+MODEL_NAME = "gemini-3.6-pro"
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def get_credentials():
     try:
-        creds = Credentials(
+        return Credentials(
             token=None,
             refresh_token=st.secrets["google_oauth"]["refresh_token"],
             token_uri="https://oauth2.googleapis.com/token",
             client_id=st.secrets["google_oauth"]["client_id"],
             client_secret=st.secrets["google_oauth"]["client_secret"]
         )
-        return creds
     except Exception as e:
-        st.error(f"[오류] 구글 OAuth 인증 정보 로드 실패: {e}")
+        st.error(f"[오류] 인증 실패: {e}")
         return None
 
 # ==========================================
-# [3] 사이드바: 심사 환경 제어 및 수동 검색
+# [3] 사이드바 설정
 # ==========================================
 with st.sidebar:
     st.markdown("## 🥛 YONSEI DAIRY")
-    st.markdown("#### 스마트 해썹(HACCP) 현장 심사포털")
+    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
     st.markdown("---")
-    
-    st.markdown("### 🎛️ 심사 환경 제어")
     use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
     
     if use_voice_mode:
@@ -114,11 +110,11 @@ with st.sidebar:
         
     st.markdown("---")
     st.markdown("### ⌨️ 보조 텍스트 검색")
-    manual_query = st.text_input("서류명 또는 질문 입력:", placeholder="예: 수질검사 성적서 보여줘", label_visibility="collapsed")
+    manual_query = st.text_input("서류명 입력:", placeholder="예: 수질검사 성적서", label_visibility="collapsed")
     manual_submit = st.button("문서 검색 🚀", use_container_width=True)
 
 # ==========================================
-# [4] 구글 드라이브 및 AI 코어 로직 (하위 폴더 탐색 개선)
+# [4] 속도 최적화 구글 드라이브 다중 검색 코어
 # ==========================================
 def get_drive_service():
     creds = get_credentials()
@@ -126,41 +122,22 @@ def get_drive_service():
         return build('drive', 'v3', credentials=creds)
     return None
 
-def search_drive_file(service, root_folder_id, keyword):
+def search_multiple_drive_files(service, keyword):
     """
-    최상위 폴더뿐만 아니라, 하위 폴더들 내부까지 재귀적으로 스캔하여
-    키워드가 포함된 파일을 찾아내는 스마트 검색 함수
+    최상위 폴더 및 하위 폴더를 모두 포함하여 키워드에 해당하는 '모든' 파일을 가져옵니다.
+    최대 10개까지 검색하여 사용자에게 선택권을 제공합니다.
     """
     try:
-        # 1. 먼저 루트 폴더 바로 아래의 파일들 검색
-        query = f"'{root_folder_id}' in parents and name contains '{keyword}' and trashed = false"
-        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)').execute()
+        # fullText를 활용해 드라이브 내 관련 문서를 광속으로 최대 10개까지 스캔
+        query = f"fullText contains '{keyword}' and trashed = false"
+        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)', pageSize=10).execute()
         files = res.get('files', [])
         
-        # 만약 바로 찾았다면 반환
-        pdf_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
-        if pdf_files:
-            return pdf_files
-
-        # 2. 파일이 없다면 루트 폴더 아래의 모든 '하위 폴더'들을 조회
-        sub_query = f"'{root_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        sub_res = service.files().list(q=sub_query, spaces='drive', fields='files(id, name)').execute()
-        sub_folders = sub_res.get('files', [])
-
-        # 3. 각 하위 폴더 내부를 돌면서 키워드 파일 검색
-        for folder in sub_folders:
-            folder_id = folder['id']
-            deep_query = f"'{folder_id}' in parents and name contains '{keyword}' and trashed = false"
-            deep_res = service.files().list(q=deep_query, spaces='drive', fields='files(id, name, webViewLink, mimeType)').execute()
-            deep_files = deep_res.get('files', [])
-            
-            valid_files = [f for f in deep_files if f['mimeType'] != 'application/vnd.google-apps.folder']
-            if valid_files:
-                return valid_files # 찾은 파일 리턴
-
-        return []
+        # 폴더 제외, 실제 문서(PDF, 이미지, 시트 등)만 필터링
+        valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
+        return valid_files
     except Exception as e:
-        st.error(f"드라이브 검색 중 오류 발생: {e}")
+        st.error(f"검색 중 오류 발생: {e}")
         return []
 
 def download_file_bytes(service, file_id):
@@ -187,19 +164,15 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
     service = get_drive_service()
     if not service: return
 
+    t_start = time.time()
     model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
     
-    with st.spinner("심사관 요청 분석 중..."):
-        t_start = time.time()
-        
-        # 💡 키워드 추출 시 '수질검사'나 '성적서'처럼 핵심 단어만 뽑도록 프롬프트 보완
+    with st.spinner("Pro 모델: 심사관 의도 정밀 분석 중..."):
+        # 💡 프롬프트를 극도로 경량화하여 추론 속도를 높임
         intent_prompt = """
-        사용자의 요청을 분석하여 아래 JSON만 응답하세요. 파일명을 찾기 위한 가장 핵심적인 단어 하나 또는 두 개만 search_keyword에 넣으세요 (예: 수질검사, 성적서, 보건증, 허가증).
-        {
-            "action": "search",
-            "search_keyword": "핵심 검색 키워드 (예: 수질검사)",
-            "specific_question": "문서에서 찾아야 할 구체적인 질문 (없으면 빈 문자열)"
-        }
+        사용자 요청에서 구글 드라이브 검색을 위한 가장 핵심적인 단어 1개만 추출하세요. 
+        예: '수질검사 성적서 줘' -> '수질검사', '보건증 보여줘' -> '보건증'
+        응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
         
         if audio_bytes:
@@ -211,33 +184,43 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
             os.remove(tmp_audio_path)
             genai.delete_file(audio_file.name)
         else:
-            intent_res = model.generate_content([f"사용자 요청: {query_text}", intent_prompt])
+            intent_res = model.generate_content([f"요청: {query_text}", intent_prompt])
 
-        intent_data = json.loads(intent_res.text.strip().replace("```json", "").replace("```", ""))
-        keyword = intent_data.get("search_keyword", "수질검사") # 기본값 보완
-        question = intent_data.get("specific_question", "")
+        try:
+            intent_data = json.loads(intent_res.text.strip().replace("```json", "").replace("```", ""))
+            keyword = intent_data.get("search_keyword", query_text[:5])
+            question = intent_data.get("specific_question", "")
+        except:
+            keyword = query_text.replace("보여줘", "").strip()
+            question = ""
 
-        st.info(f"🔍 타겟 문서 키워드: **{keyword}** / 📝 심사관 질문: **{question if question else '단순 서류 열람'}**")
+        st.info(f"🔍 Pro 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
 
-    # 💡 하위 폴더까지 뒤지는 스마트 검색 실행
-    found_files = search_drive_file(service, DRIVE_FOLDER_ID, keyword)
+    # 드라이브 다중 검색 실행
+    found_files = search_multiple_drive_files(service, keyword)
     
-    if not found_files:
-        # 키워드를 넓혀서 한 번 더 재시도 (예: '수질검사'로 안 나오면 '성적서'로 재검색)
-        found_files = search_drive_file(service, DRIVE_FOLDER_ID, "수질검사")
-
     if not found_files:
         st.warning(f"⚠️ '{keyword}' 관련 서류를 찾지 못했습니다.")
         if is_voice_active:
-            autoplay_audio("해당 서류를 찾지 못했습니다. 파일명을 다시 확인해주세요.")
+            autoplay_audio("해당 서류를 찾지 못했습니다.")
         return
 
-    top_file = found_files[0]
-    file_id, file_name, view_url = top_file['id'], top_file['name'], top_file['webViewLink']
-    st.success(f"✅ '{file_name}' 문서를 찾았습니다. (소요시간: {time.time() - t_start:.1f}초)")
+    st.success(f"✅ 총 **{len(found_files)}개**의 관련 문서를 찾았습니다! (소요시간: {time.time() - t_start:.1f}초)")
 
+    # 💡 검색된 파일이 여러 개일 경우 선택할 수 있는 UI 제공
+    file_options = {f['name']: f for f in found_files}
+    
+    if len(found_files) > 1:
+        selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요 (최신순 등):", list(file_options.keys()))
+    else:
+        selected_file_name = list(file_options.keys())[0]
+        
+    top_file = file_options[selected_file_name]
+    file_id, file_name, view_url = top_file['id'], top_file['name'], top_file['webViewLink']
+
+    # 특정 질문이 있을 경우에만 Pro 모델로 원본 문서 심층 분석(Pre-calc) 수행
     if question:
-        with st.spinner("문서 정밀 분석 및 정답 추출 중..."):
+        with st.spinner("Pro 모델: 문서 정밀 분석 및 정답 추출 중..."):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 future_download = executor.submit(download_file_bytes, service, file_id)
                 file_bytes = future_download.result()
@@ -250,25 +233,15 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
 
             qa_prompt = f"""
             첨부된 문서는 현장 심사 서류입니다. 심사관 질문: "{question}"
-            
-            <pre_calc>
-            1. 질문과 관련된 텍스트/수치를 100% 그대로 추출하라.
-            2. 필요시 수식을 계산하라.
-            </pre_calc>
-            
-            [최종 브리핑]
-            위 <pre_calc>를 바탕으로 심사관에게 보고할 1~2문장짜리 간결한 브리핑 텍스트만 '최종 브리핑:' 뒤에 작성하세요. 인사말 생략.
+            팩트에 기반하여 정확한 수치나 텍스트를 추출하고, 심사관에게 보고할 1~2문장짜리 간결한 브리핑 스크립트만 작성하세요.
             """
-            
             ans_res = model.generate_content([gemini_doc, qa_prompt])
-            ans_text = ans_res.text
-            final_briefing = ans_text.split("[최종 브리핑]")[-1].replace("최종 브리핑:", "").strip() if "[최종 브리핑]" in ans_text else ans_text.strip()
+            final_briefing = ans_res.text.strip()
             
             genai.delete_file(gemini_doc.name)
             os.remove(tmp_doc_path)
-            
     else:
-        final_briefing = f"요청하신 {file_name} 원본 서류를 화면에 띄웁니다."
+        final_briefing = f"요청하신 {file_name} 원본 서류입니다."
 
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -302,7 +275,7 @@ with tab1:
 
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
-    
+    # 기존 FOLDER_DB 구조 유지
     FOLDER_DB = {
         "1. 인허가 및 인증 서류": {
             "인허가 서류": "folder_id_1a",
@@ -310,7 +283,7 @@ with tab2:
             "PL보험가입증서": "folder_id_1c"
         },
         "2. 위생 및 환경 관리": {
-            "수질검사": "1gPfqV7K2bs29fvR0fSjSFYx_gtObyzKh", # 💡 실제 수질검사 폴더 ID 매핑
+            "수질검사": "1gPfqV7K2bs29fvR0fSjSFYx_gtObyzKh", 
             "물탱크청소": "folder_id_2b",
             "방충방서 관련 서류": "folder_id_2c"
         },
@@ -399,7 +372,7 @@ with tab3:
     if expired_docs > 0:
         st.error(f"🚨 [긴급 경고] 유효기간이 만료된 법정 서류가 {expired_docs}건 있습니다!")
     elif warning_docs > 0:
-        st.warning(f"⚠️ [갱신 안내] 30일 이내에 신되는 서류가 {warning_docs}건 있습니다.")
+        st.warning(f"⚠️ [갱신 안내] 30일 이내에 만료되는 서류가 {warning_docs}건 있습니다.")
         
     def color_status(val):
         if "기간 경과" in str(val): return 'color: white; background-color: #ef4444; font-weight: bold'
