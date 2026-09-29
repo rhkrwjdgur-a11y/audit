@@ -67,7 +67,7 @@ custom_theme_css = """
 st.markdown(custom_theme_css, unsafe_allow_html=True)
 
 # ==========================================
-# [2] 보안 설정 및 Pro 모델 선언
+# [2] 보안 설정 및 검증된 모델 선언
 # ==========================================
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -77,8 +77,8 @@ except Exception as e:
     st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다.")
     st.stop()
 
-# 💡 속도와 정확도를 모두 잡기 위해 Pro 모델 재도입
-MODEL_NAME = "gemini-3.6-pro"
+# 💡 담당자님 환경에서 정상 작동하는 플래시 모델로 픽스
+MODEL_NAME = "gemini-3.8-flash"
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def get_credentials():
@@ -167,7 +167,7 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
     t_start = time.time()
     model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
     
-    with st.spinner("Pro 모델: 심사관 의도 정밀 분석 중..."):
+    with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
         # 💡 프롬프트를 극도로 경량화하여 추론 속도를 높임
         intent_prompt = """
         사용자 요청에서 구글 드라이브 검색을 위한 가장 핵심적인 단어 1개만 추출하세요. 
@@ -194,7 +194,7 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
             keyword = query_text.replace("보여줘", "").strip()
             question = ""
 
-        st.info(f"🔍 Pro 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
+        st.info(f"🔍 AI 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
 
     # 드라이브 다중 검색 실행
     found_files = search_multiple_drive_files(service, keyword)
@@ -211,16 +211,16 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
     file_options = {f['name']: f for f in found_files}
     
     if len(found_files) > 1:
-        selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요 (최신순 등):", list(file_options.keys()))
+        selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요:", list(file_options.keys()))
     else:
         selected_file_name = list(file_options.keys())[0]
         
     top_file = file_options[selected_file_name]
     file_id, file_name, view_url = top_file['id'], top_file['name'], top_file['webViewLink']
 
-    # 특정 질문이 있을 경우에만 Pro 모델로 원본 문서 심층 분석(Pre-calc) 수행
+    # 특정 질문이 있을 경우에만 모델로 원본 문서 심층 분석 수행
     if question:
-        with st.spinner("Pro 모델: 문서 정밀 분석 및 정답 추출 중..."):
+        with st.spinner("AI: 문서 정밀 분석 및 정답 추출 중..."):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 future_download = executor.submit(download_file_bytes, service, file_id)
                 file_bytes = future_download.result()
@@ -275,7 +275,7 @@ with tab1:
 
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
-    # 기존 FOLDER_DB 구조 유지
+    
     FOLDER_DB = {
         "1. 인허가 및 인증 서류": {
             "인허가 서류": "folder_id_1a",
@@ -367,7 +367,7 @@ with tab3:
     df_validity["상태"] = status_list
     
     expired_docs = len(df_validity[df_validity["상태"] == "🚨 기간 경과 (즉시 갱신)"])
-    warning_docs = len(df_validity[df_validity["상태"] == "⚠️ 갱신 임박 (30일 이내)"])
+    warning_docs = len(df_validity[df_validity["상태"] == "⚠️️ 갱신 임박 (30일 이내)"])
     
     if expired_docs > 0:
         st.error(f"🚨 [긴급 경고] 유효기간이 만료된 법정 서류가 {expired_docs}건 있습니다!")
