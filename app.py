@@ -140,6 +140,20 @@ KNOWLEDGE_BASE = {
 # ==========================================
 st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", layout="wide")
 
+# 세션 상태 초기화 (화면이 다시 그려져도 검색 상태 유지)
+if "search_done" not in st.session_state:
+    st.session_state.search_done = False
+    st.session_state.found_files = []
+    st.session_state.search_keyword = ""
+    st.session_state.search_question = ""
+    st.session_state.query_text = ""
+    st.session_state.final_briefing = ""
+    st.session_state.last_file_id = ""
+    st.session_state.preview_url = ""
+    st.session_state.view_url = ""
+    st.session_state.is_voice = False
+    st.session_state.last_audio_hash = None
+
 custom_theme_css = """
 <style>
 @media screen {
@@ -198,7 +212,6 @@ except Exception as e:
     st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다.")
     st.stop()
 
-# 💡 NotFound 에러 방지를 위해 models/ 접두사 및 최신 구문 사용
 MODEL_NAME = "models/gemini-3.8-flash"
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
@@ -243,17 +256,38 @@ def get_drive_service():
         return build('drive', 'v3', credentials=creds)
     return None
 
-def search_multiple_drive_files(service, keyword):
+@st.cache_data(ttl=3600)
+def get_target_folder_ids(_service, root_folder_id):
+    """루트 폴더 및 모든 하위 폴더의 ID를 재귀적으로 스캔하여 캐싱합니다."""
+    folders = [root_folder_id]
+    def fetch_children(parent_id):
+        q = f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        res = _service.files().list(q=q, fields="files(id)").execute()
+        for item in res.get('files', []):
+            folders.append(item['id'])
+            fetch_children(item['id'])
+    try:
+        fetch_children(root_folder_id)
+    except Exception as e:
+        pass
+    return folders
+
+def search_multiple_drive_files(service, keyword, root_folder_id):
     """
-    최상위 폴더 및 하위 폴더를 모두 포함하여 키워드에 해당하는 '모든' 파일을 가져옵니다.
-    최대 10개까지 검색하여 사용자에게 선택권을 제공합니다.
+    지정된 방문심사 폴더(및 하위 폴더) 내부로만 검색 영역을 철벽 제한하여 문서를 가져옵니다.
     """
     try:
-        query = f"fullText contains '{keyword}' and trashed = false"
+        target_folders = get_target_folder_ids(service, root_folder_id)
+        
+        if target_folders:
+            parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
+            query = f"fullText contains '{keyword}' and trashed = false and ({parents_query})"
+        else:
+            query = f"fullText contains '{keyword}' and trashed = false and '{root_folder_id}' in parents"
+
         res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)', pageSize=10).execute()
         files = res.get('files', [])
 
-        # 폴더 제외, 실제 문서(PDF, 이미지, 시트 등)만 필터링
         valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
         return valid_files
     except Exception as e:
@@ -280,22 +314,29 @@ def autoplay_audio(text):
         st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
     os.remove(temp_filename)
 
-def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False):
+def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_active=False):
+    """ 
+    사용자가 검색 버튼을 눌렀을 때 1회 실행되어 파일 목록을 찾고 세션에 저장합니다.
+    (Selectbox 클릭 시에는 이 함수를 패스하고 화면 렌더링만 다시 합니다)
+    """
     service = get_drive_service()
     if not service: return
 
+    st.session_state.search_done = True
+    st.session_state.is_voice = is_voice_active
+    st.session_state.query_text = query_text if query_text else ""
+    st.session_state.last_file_id = "" # 새로운 검색이므로 기존 문서 분석 기록을 리셋
+    
     t_start = time.time()
-    # 💡 에러 방지를 위해 정의한 모델 호출. (해당 모델을 지원하지 않을 경우 gemini-1.5-flash로 폴백 처리 권장)
     try:
         model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
     except:
         model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config={"temperature": 0.0})
 
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
-        # 💡 프롬프트를 포괄적 단어('기준서') 대신 '명사형 핵심 키워드' 추출로 변경
         intent_prompt = """
         사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 명사 단어 1~2개만 추출하세요. 
-        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '집유장', '수질검사', '금속검출기', '온도센서')를 도출하세요.
+        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '집유장', '수질검사', '금속검출기', '온도센서', '건축물대장')를 도출하세요.
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
 
@@ -318,95 +359,15 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
             keyword = query_text.replace("보여줘", "").strip()
             question = query_text
 
-        st.info(f"🔍 AI 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
+        st.session_state.search_keyword = keyword
+        st.session_state.search_question = question
 
     # 드라이브 다중 검색 실행
-    found_files = search_multiple_drive_files(service, keyword)
-
-    if not found_files:
-        st.warning(f"⚠️ '{keyword}' 관련 서류를 찾지 못했습니다. 지식베이스를 기반으로만 답변합니다.")
-        found_files = [] # 빈 리스트로 처리하여 문서 표시 패스
-
-    final_briefing = ""
-    preview_url = ""
-    view_url = ""
-    gemini_file = None
-    tmp_doc_path = ""
-
-    # 문서가 발견되었을 경우의 처리 (PDF 등 직접 업로드)
+    found_files = search_multiple_drive_files(service, keyword, DRIVE_FOLDER_ID)
+    st.session_state.found_files = found_files
+    
     if found_files:
-        st.success(f"✅ 총 **{len(found_files)}개**의 관련 문서를 찾았습니다! (소요시간: {time.time() - t_start:.1f}초)")
-        
-        file_options = {f['name']: f for f in found_files}
-        
-        if len(found_files) > 1:
-            selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요:", list(file_options.keys()))
-        else:
-            selected_file_name = list(file_options.keys())[0]
-
-        top_file = file_options[selected_file_name]
-        file_id, file_name, view_url = top_file['id'], top_file['name'], top_file['webViewLink']
-        preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
-
-        with st.spinner(f"📥 '{file_name}' 문서를 다운로드 및 AI 분석 장전 중..."):
-            try:
-                # 파일을 바이트로 다운로드 후 Gemini File API에 업로드하여 텍스트 인식률 100% 확보
-                file_bytes = download_file_bytes(service, file_id)
-                file_ext = ".pdf" if "pdf" in top_file.get('mimeType', '').lower() else ".txt"
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_doc:
-                    tmp_doc.write(file_bytes)
-                    tmp_doc_path = tmp_doc.name
-                
-                gemini_file = genai.upload_file(path=tmp_doc_path)
-            except Exception as e:
-                st.error(f"파일 처리 중 오류: {e}")
-
-    # AI 답변 생성 (지식베이스 + 업로드된 문서)
-    with st.spinner("🤖 AI가 규정 지식베이스와 문서를 종합하여 브리핑을 작성 중입니다..."):
-        kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False, indent=2)
-        analysis_prompt = f"""
-        당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
-        아래의 [사내 규정 초정밀 지식베이스]와 첨부된 [문서 내용(있을경우)]을 종합하여 심사관의 질문에 즉각 답변하세요.
-        
-        [사내 규정 초정밀 지식베이스]
-        {kb_str}
-        
-        [심사관 요청/질문]
-        {question if question else query_text}
-        
-        [행동 지침]
-        1. 질문이 살균 온도/시간, 여과망 사이즈, 과산화수소 농도 등 구체적인 수치를 묻는다면, 지식베이스의 팩트 데이터를 최우선으로 인용하여 **명확한 숫자**로 즉시 대답하세요. (추정 금지, 축약 금지)
-        2. 문서가 첨부되었다면, 문서의 내용 중 심사관의 질문에 부합하는 요약 브리핑을 덧붙이세요.
-        3. 정중하고 전문적인 현장 심사 담당자의 톤앤매너를 유지하세요.
-        """
-        try:
-            inputs = [gemini_file, analysis_prompt] if gemini_file else [analysis_prompt]
-            response = model.generate_content(inputs)
-            final_briefing = response.text
-        except Exception as e:
-            final_briefing = f"AI 분석 중 오류가 발생했습니다: {str(e)}"
-        finally:
-            # File API 리소스 정리 (삭제 필수)
-            if gemini_file:
-                genai.delete_file(gemini_file.name)
-                os.remove(tmp_doc_path)
-
-    # UI 렌더링
-    if preview_url:
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            st.markdown(f"🔗 **[원본 새창에서 열기]({view_url})**")
-            st.components.v1.iframe(preview_url, height=600, scrolling=True)
-        with col2:
-            st.write("🤖 **AI 브리핑 결과:**")
-            st.success(final_briefing)
-    else:
-        st.write("🤖 **AI 브리핑 결과:**")
-        st.success(final_briefing)
-        
-    if is_voice_active:
-        autoplay_audio(final_briefing)
+        st.success(f"✅ 총 **{len(found_files)}개**의 문서를 찾았습니다. (소요시간: {time.time() - t_start:.1f}초)")
 
 # ==========================================
 # [5] 메인 UI 탭 구성
@@ -419,13 +380,126 @@ with tab1:
         st.markdown("### 🎙️ 음성 기반 AI 검색")
         audio_value = st.audio_input("여기를 눌러 심사관의 요청을 녹음하세요")
         if audio_value:
-            process_audit_query(audio_bytes=audio_value.getvalue(), is_voice_active=True)
+            audio_bytes = audio_value.getvalue()
+            audio_hash = hash(audio_bytes)
+            # 녹음 파일이 새로 들어왔을 때만 검색 실행 (무한루프 방지)
+            if st.session_state.last_audio_hash != audio_hash:
+                st.session_state.last_audio_hash = audio_hash
+                execute_search_and_extract(audio_bytes=audio_bytes, is_voice_active=True)
     else:
         st.markdown("### ⌨️ 텍스트 기반 AI 검색 (정숙 모드)")
         st.info("사이드바의 '보조 텍스트 검색' 창에 검색어를 입력하고 엔터를 누르세요.")
 
+    # 텍스트 버튼 클릭 시 검색 실행
     if manual_submit and manual_query:
-        process_audit_query(query_text=manual_query, is_voice_active=use_voice_mode)
+        execute_search_and_extract(query_text=manual_query, is_voice_active=use_voice_mode)
+
+    # =============== 검색 결과 렌더링 (State 유지) ===============
+    if st.session_state.search_done:
+        keyword = st.session_state.search_keyword
+        question = st.session_state.search_question
+        found_files = st.session_state.found_files
+        service = get_drive_service()
+        
+        st.info(f"🔍 AI 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
+        
+        # 1. 문서가 하나도 없을 때 (지식베이스 브리핑만 실행)
+        if not found_files:
+            st.warning(f"⚠️ '{keyword}' 관련 서류를 찾지 못했습니다. 지식베이스를 기반으로만 답변합니다.")
+            
+            if st.session_state.last_file_id != "KB_ONLY":
+                with st.spinner("🤖 AI가 규정 지식베이스를 기반으로 답변을 작성 중입니다..."):
+                    kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False, indent=2)
+                    analysis_prompt = f"""
+                    당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
+                    아래의 [사내 규정 초정밀 지식베이스]를 기반으로 심사관의 질문에 즉각 답변하세요.
+                    [사내 규정 초정밀 지식베이스]\n{kb_str}\n
+                    [심사관 요청/질문]\n{question if question else st.session_state.query_text}
+                    [행동 지침]
+                    1. 질문이 살균 온도/시간, 여과망 사이즈 등 수치를 묻는다면 명확한 숫자로 즉시 대답하세요.
+                    2. 정중하고 전문적인 톤앤매너를 유지하세요.
+                    """
+                    try:
+                        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
+                        response = model.generate_content([analysis_prompt])
+                        st.session_state.final_briefing = response.text
+                    except Exception as e:
+                        st.session_state.final_briefing = f"오류 발생: {e}"
+                    
+                    st.session_state.last_file_id = "KB_ONLY"
+                    st.session_state.preview_url = ""
+                    
+            st.write("🤖 **AI 브리핑 결과:**")
+            st.success(st.session_state.final_briefing)
+
+        # 2. 문서가 발견되었을 때 (Selectbox 및 PDF/AI 분석 출력)
+        else:
+            file_options = {f['name']: f for f in found_files}
+            
+            if len(found_files) > 1:
+                # 💡 여기서 다른 문서를 선택해도 화면이 꺼지지 않고 이 아래 로직만 즉시 다시 돕니다.
+                selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요:", list(file_options.keys()))
+            else:
+                selected_file_name = list(file_options.keys())[0]
+                st.markdown(f"**📂 자동 선택된 문서:** {selected_file_name}")
+                
+            top_file = file_options[selected_file_name]
+            file_id = top_file['id']
+            
+            # 선택된 문서가 이전에 분석한 문서와 다르다면 다운로드 및 AI 분석 수행
+            if st.session_state.last_file_id != file_id:
+                st.session_state.preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
+                st.session_state.view_url = top_file['webViewLink']
+                
+                with st.spinner(f"📥 '{top_file['name']}' 문서를 다운로드 및 AI 분석 장전 중..."):
+                    gemini_file = None
+                    tmp_doc_path = ""
+                    try:
+                        file_bytes = download_file_bytes(service, file_id)
+                        file_ext = ".pdf" if "pdf" in top_file.get('mimeType', '').lower() else ".txt"
+                        
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_doc:
+                            tmp_doc.write(file_bytes)
+                            tmp_doc_path = tmp_doc.name
+                        
+                        gemini_file = genai.upload_file(path=tmp_doc_path)
+                        kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False, indent=2)
+                        
+                        analysis_prompt = f"""
+                        당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
+                        [사내 규정 초정밀 지식베이스]\n{kb_str}\n
+                        [심사관 요청/질문]\n{question if question else st.session_state.query_text}
+                        [행동 지침]
+                        1. 수치를 묻는 질문은 지식베이스의 팩트를 최우선 인용하여 명확한 숫자로 대답하세요.
+                        2. 첨부된 문서 내용을 바탕으로 심사관 질문에 부합하는 요약을 덧붙이세요.
+                        3. 정중하고 전문적인 톤앤매너를 유지하세요.
+                        """
+                        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
+                        response = model.generate_content([gemini_file, analysis_prompt])
+                        st.session_state.final_briefing = response.text
+                        
+                    except Exception as e:
+                        st.session_state.final_briefing = f"AI 분석 중 오류가 발생했습니다: {str(e)}"
+                    finally:
+                        if gemini_file:
+                            genai.delete_file(gemini_file.name)
+                            os.remove(tmp_doc_path)
+                            
+                st.session_state.last_file_id = file_id # 분석 완료 처리
+
+            # iframe 뷰어 및 AI 브리핑 결과 출력
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.markdown(f"🔗 **[원본 새창에서 열기]({st.session_state.view_url})**")
+                st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
+            with col2:
+                st.write("🤖 **AI 브리핑 결과:**")
+                st.success(st.session_state.final_briefing)
+
+        # 오디오 출력은 분석이 완료된 직후 1회만 실행
+        if st.session_state.is_voice:
+            autoplay_audio(st.session_state.final_briefing)
+            st.session_state.is_voice = False 
 
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
