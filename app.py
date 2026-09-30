@@ -214,39 +214,20 @@ def process_audit_query(query_text=None, audio_bytes=None, is_voice_active=False
         selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요:", list(file_options.keys()))
     else:
         selected_file_name = list(file_options.keys())[0]
-        
-    top_file = file_options[selected_file_name]
+
+top_file = file_options[selected_file_name]
     file_id, file_name, view_url = top_file['id'], top_file['name'], top_file['webViewLink']
+    
+    # 💡 [핵심 추가] 구글 드라이브 미리보기 전용 URL로 강제 생성
+    preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
 
-    # 특정 질문이 있을 경우에만 모델로 원본 문서 심층 분석 수행
-    if question:
-        with st.spinner("AI: 문서 정밀 분석 및 정답 추출 중..."):
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future_download = executor.submit(download_file_bytes, service, file_id)
-                file_bytes = future_download.result()
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_doc:
-                tmp_doc.write(file_bytes)
-                tmp_doc_path = tmp_doc.name
-            
-            gemini_doc = genai.upload_file(path=tmp_doc_path)
-
-            qa_prompt = f"""
-            첨부된 문서는 현장 심사 서류입니다. 심사관 질문: "{question}"
-            팩트에 기반하여 정확한 수치나 텍스트를 추출하고, 심사관에게 보고할 1~2문장짜리 간결한 브리핑 스크립트만 작성하세요.
-            """
-            ans_res = model.generate_content([gemini_doc, qa_prompt])
-            final_briefing = ans_res.text.strip()
-            
-            genai.delete_file(gemini_doc.name)
-            os.remove(tmp_doc_path)
-    else:
-        final_briefing = f"요청하신 {file_name} 원본 서류입니다."
+    # ... (중략) ...
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.markdown(f"🔗 **[원본 파일 열기 (사진 촬영용 뷰어)]({view_url})**")
-        st.components.v1.iframe(view_url, height=600, scrolling=True)
+        st.markdown(f"🔗 **[원본 새창에서 열기]({view_url})**")
+        # 💡 iframe에는 기존 view_url 대신 preview_url을 넣습니다!
+        st.components.v1.iframe(preview_url, height=600, scrolling=True)
     with col2:
         st.write("🤖 **AI 브리핑 결과:**")
         st.success(f'"{final_briefing}"')
