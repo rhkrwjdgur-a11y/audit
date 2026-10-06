@@ -9,6 +9,7 @@ import io
 import time
 import pandas as pd
 import datetime
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -136,6 +137,36 @@ KNOWLEDGE_BASE = {
 }
 
 # ==========================================
+# [0-1] 연세유업 사내 그룹웨어 공식 결재양식 맵핑 사전
+# (검색어를 구체적인 공식 폴더/양식 명칭으로 변환하여 정확도를 100%로 끌어올립니다.)
+# ==========================================
+GW_CATEGORY_MAP = {
+    "미생물": "미생물 검사",
+    "크림떡": "크림떡 검사",
+    "크림빵": "크림빵 미생물",
+    "탈지분유": "탈지분유",
+    "대두": "대두 입고",
+    "압축공기": "압축공기 미생물",
+    "미생물실": "미생물실 낙하",
+    "응결수": "응결수 미생물",
+    "클린벤치": "클린벤치 낙하세균",
+    "세척": "세척.소독제",
+    "소독제": "세척.소독제",
+    "용수": "용수 검사 성적서",
+    "표면오염도": "표면오염도 검사",
+    "낙하세균": "낙하세균 검사",
+    "알러겐": "알러겐 검사",
+    "손위생": "작업자 손 위생",
+    "작업자": "작업자 손 위생",
+    "수질": "정기 수질 검사",
+    "병원성": "병원성 미생물",
+    "자가품질": "자가품질",
+    "위생교육": "위생교육",
+    "협력업체": "협력업체",
+    "작업장": "작업장위생"
+}
+
+# ==========================================
 # [1] 시스템 기본 설정 및 엔터프라이즈 UI CSS
 # ==========================================
 st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", layout="wide")
@@ -244,7 +275,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### ⌨️ 보조 텍스트 검색")
-    manual_query = st.text_input("서류명 입력:", placeholder="예: 수질검사 성적서, 살균온도", label_visibility="collapsed")
+    manual_query = st.text_input("서류명 입력:", placeholder="예: 알러겐 검사, 살균온도", label_visibility="collapsed")
     manual_submit = st.button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
 
 # ==========================================
@@ -317,7 +348,6 @@ def autoplay_audio(text):
 def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_active=False):
     """ 
     사용자가 검색 버튼을 눌렀을 때 1회 실행되어 파일 목록을 찾고 세션에 저장합니다.
-    (Selectbox 클릭 시에는 이 함수를 패스하고 화면 렌더링만 다시 합니다)
     """
     service = get_drive_service()
     if not service: return
@@ -325,7 +355,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     st.session_state.search_done = True
     st.session_state.is_voice = is_voice_active
     st.session_state.query_text = query_text if query_text else ""
-    st.session_state.last_file_id = "" # 새로운 검색이므로 기존 문서 분석 기록을 리셋
+    st.session_state.last_file_id = "" 
     
     t_start = time.time()
     try:
@@ -336,7 +366,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
         intent_prompt = """
         사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 명사 단어 1~2개만 추출하세요. 
-        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '집유장', '수질검사', '금속검출기', '온도센서', '건축물대장')를 도출하세요.
+        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '알러겐', '클린벤치', '수질검사', '온도센서')를 도출하세요.
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
 
@@ -362,7 +392,6 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
         st.session_state.search_keyword = keyword
         st.session_state.search_question = question
 
-    # 드라이브 다중 검색 실행
     found_files = search_multiple_drive_files(service, keyword, DRIVE_FOLDER_ID)
     st.session_state.found_files = found_files
     
@@ -382,7 +411,6 @@ with tab1:
         if audio_value:
             audio_bytes = audio_value.getvalue()
             audio_hash = hash(audio_bytes)
-            # 녹음 파일이 새로 들어왔을 때만 검색 실행 (무한루프 방지)
             if st.session_state.last_audio_hash != audio_hash:
                 st.session_state.last_audio_hash = audio_hash
                 execute_search_and_extract(audio_bytes=audio_bytes, is_voice_active=True)
@@ -390,7 +418,6 @@ with tab1:
         st.markdown("### ⌨️ 텍스트 기반 AI 검색 (정숙 모드)")
         st.info("사이드바의 '보조 텍스트 검색' 창에 검색어를 입력하고 엔터를 누르세요.")
 
-    # 텍스트 버튼 클릭 시 검색 실행
     if manual_submit and manual_query:
         execute_search_and_extract(query_text=manual_query, is_voice_active=use_voice_mode)
 
@@ -405,7 +432,7 @@ with tab1:
         
         # 1. 문서가 하나도 없을 때 (지식베이스 브리핑만 실행)
         if not found_files:
-            st.warning(f"⚠️ '{keyword}' 관련 서류를 찾지 못했습니다. 지식베이스를 기반으로만 답변합니다.")
+            st.warning(f"⚠️ 구글 드라이브(방문심사 폴더)에서 '{keyword}' 관련 서류를 찾지 못했습니다. 지식베이스를 기반으로만 답변합니다.")
             
             if st.session_state.last_file_id != "KB_ONLY":
                 with st.spinner("🤖 AI가 규정 지식베이스를 기반으로 답변을 작성 중입니다..."):
@@ -437,7 +464,6 @@ with tab1:
             file_options = {f['name']: f for f in found_files}
             
             if len(found_files) > 1:
-                # 💡 여기서 다른 문서를 선택해도 화면이 꺼지지 않고 이 아래 로직만 즉시 다시 돕니다.
                 selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요:", list(file_options.keys()))
             else:
                 selected_file_name = list(file_options.keys())[0]
@@ -446,7 +472,6 @@ with tab1:
             top_file = file_options[selected_file_name]
             file_id = top_file['id']
             
-            # 선택된 문서가 이전에 분석한 문서와 다르다면 다운로드 및 AI 분석 수행
             if st.session_state.last_file_id != file_id:
                 st.session_state.preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
                 st.session_state.view_url = top_file['webViewLink']
@@ -485,9 +510,8 @@ with tab1:
                             genai.delete_file(gemini_file.name)
                             os.remove(tmp_doc_path)
                             
-                st.session_state.last_file_id = file_id # 분석 완료 처리
+                st.session_state.last_file_id = file_id 
 
-            # iframe 뷰어 및 AI 브리핑 결과 출력
             col1, col2 = st.columns([2, 1])
             with col1:
                 st.markdown(f"🔗 **[원본 새창에서 열기]({st.session_state.view_url})**")
@@ -496,7 +520,28 @@ with tab1:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
 
-        # 오디오 출력은 분석이 완료된 직후 1회만 실행
+        # 3. 사내 그룹웨어(전자결재) 다이렉트 카테고리 맵핑 검색 링크 생성
+        st.markdown("---")
+        st.markdown("### 🏢 사내 그룹웨어(전자결재) 공식 양식 연동 검색")
+        
+        # 기본값은 AI 추출 키워드
+        gw_search_keyword = keyword
+        
+        # 사내 공식 양식명 매칭 로직 (이미지 분석 기반)
+        # 키워드나 원본 질문에 해당 단어가 있으면 공식 명칭으로 덮어씌움
+        for key, official_name in GW_CATEGORY_MAP.items():
+            if key in keyword or key in st.session_state.query_text:
+                gw_search_keyword = official_name
+                break
+                
+        encoded_keyword = urllib.parse.quote(gw_search_keyword)
+        
+        # 공식 양식명(정확한 텍스트)을 keyword에 넣어 검색하면 해당 카테고리만 정확하게 필터링됨
+        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}"
+        
+        st.info(f"💡 그룹웨어에서 공식 양식인 **'{gw_search_keyword}'** 항목만 깔끔하게 모아서 보시겠습니까?")
+        st.markdown(f"🔗 **[연세유업 전자결재함 '{gw_search_keyword}' 전용 목록 바로가기 (클릭)]({gw_search_url})**")
+
         if st.session_state.is_voice:
             autoplay_audio(st.session_state.final_briefing)
             st.session_state.is_voice = False 
