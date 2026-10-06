@@ -9,7 +9,6 @@ import io
 import time
 import pandas as pd
 import datetime
-import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -115,7 +114,7 @@ KNOWLEDGE_BASE = {
     "음료CCP1B_과채음료류": "과채음료, 과채주스, 혼합음료, 유산균음료, 액상차의 유액멸균(CCP-1B) 한계기준은 90~130℃(또는 135~150℃)에서 30~37초간입니다.",
     "음료CCP1B_혼합음료특정제품": "혼합음료(스위플 레드오렌지, 샤인머스캣, 과일펀치 제외)와 커피의 경우, 멸균 온도 135~150℃, 시간 30~37초간으로 관리하며, A2프로틴 오리지널의 경우 143~153℃, 3.6~4.4초간으로 관리합니다.",
     "음료CCP1B_커피": "커피의 유액멸균(CCP-1B) 한계기준은 135~150℃에서 10~14초간입니다.",
-    "음료CCP2P_여과": "음료류 여과(CCP-2P) 한계기준은 여과망 1.0Φ 사용 및 파 파손 여부 확인입니다.",
+    "음료CCP2P_여과": "음료류 여과(CCP-2P) 한계기준은 여과망 1.0Φ 사용 및 파손 여부 확인입니다.",
     "음료CCP3B_포장지멸균": "테트라팩은 과산화수소 농도 32~50% 또는 eBeam 전류값 95~105%로, 콤비블럭은 과산화수소 온도 250~290℃, 분사량 350~450μl/s(150~250μl/s 등 제품별 상이)로 포장지 멸균을 관리합니다.",
 
     # 18. 집유장 제조공정 및 HACCP PLAN (집유장 관리 기준서)
@@ -138,8 +137,6 @@ KNOWLEDGE_BASE = {
 
 # ==========================================
 # [0-1] 연세유업 사내 그룹웨어 참조/열람 문서함 숏-키워드 맵핑 사전
-# 주임님의 요구사항(부자재면 부자재, 작업자 손이면 작업자 손)에 맞춰
-# 제목 전체가 아닌 '짧은 검색어'만 URL에 전달되도록 수정했습니다.
 # ==========================================
 GW_CATEGORY_MAP = {
     "측정기기": "측정기기",
@@ -229,6 +226,18 @@ custom_theme_css = """
     [data-testid="stSidebar"] input {
         color: #000000 !important;
     }
+    
+    /* 버튼 디자인 수정 및 글자색 강제 고정 */
+    [data-testid="stSidebar"] button {
+        background-color: #3b82f6 !important; 
+        border: none !important;
+        border-radius: 6px !important;
+    }
+    [data-testid="stSidebar"] button p {
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
     .stTabs [data-baseweb="tab-list"] {
         border-bottom: 2px solid #e2e8f0 !important;
         gap: 8px;
@@ -287,7 +296,7 @@ def get_credentials():
         return None
 
 # ==========================================
-# [3] 사이드바 설정
+# [3] 사이드바 설정 (st.form 적용 완료)
 # ==========================================
 with st.sidebar:
     st.markdown("## 🥛 YONSEI DAIRY")
@@ -302,8 +311,11 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### ⌨️ 보조 텍스트 검색")
-    manual_query = st.text_input("서류명 입력:", placeholder="예: 부자재, 살균온도", label_visibility="collapsed")
-    manual_submit = st.button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
+    
+    # 엔터키 작동을 위해 st.form 적용
+    with st.form(key='search_form'):
+        manual_query = st.text_input("서류명 입력:", placeholder="예: 부자재, 살균온도", label_visibility="collapsed")
+        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
 
 # ==========================================
 # [4] 속도 최적화 구글 드라이브 다중 검색 코어
@@ -386,7 +398,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
         intent_prompt = """
         사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 명사 단어 1~2개만 추출하세요. 
-        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '알러겐', '클린벤치', '부자재', '작업자 손', '원자재')를 도출하세요.
+        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '클린벤치', '알러겐', '부자재', '작업자 손', '원자재')를 도출하세요.
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
 
@@ -434,10 +446,7 @@ with tab1:
             if st.session_state.last_audio_hash != audio_hash:
                 st.session_state.last_audio_hash = audio_hash
                 execute_search_and_extract(audio_bytes=audio_bytes, is_voice_active=True)
-    else:
-        st.markdown("### ⌨️ 텍스트 기반 AI 검색 (정숙 모드)")
-        st.info("사이드바의 '보조 텍스트 검색' 창에 검색어를 입력하고 엔터를 누르세요.")
-
+    
     if manual_submit and manual_query:
         execute_search_and_extract(query_text=manual_query, is_voice_active=use_voice_mode)
 
@@ -537,25 +546,26 @@ with tab1:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
 
-        # 3. 사내 그룹웨어(전자결재) 숏키워드 다이렉트 검색 링크 생성
+        # 3. 사내 그룹웨어 참조/열람 문서함 키워드 매칭 검색 (인코딩 제거 - 한글 직결)
         st.markdown("---")
         st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 검색")
         
         gw_search_keyword = keyword
         
-        # 사내 공식 키워드 매칭 로직 (주임님 룰에 따라 짧은 키워드로 치환)
         for key, short_keyword in GW_CATEGORY_MAP.items():
             if key in keyword or key in st.session_state.query_text:
                 gw_search_keyword = short_keyword
                 break
                 
-        encoded_keyword = urllib.parse.quote(gw_search_keyword)
-        
-        # 전체 문서함(doclist/viewer/all)에서 title 조건으로 검색하는 URL
-        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}&fromDate=&toDate=&duration=all"
+        # 💡 URL 인코딩(urllib.parse.quote)을 완전히 삭제하고 진짜 주소 형태 그대로 생성
+        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={gw_search_keyword}&fromDate=&toDate=&duration=all"
             
         st.info(f"💡 그룹웨어 문서함에서 **'{gw_search_keyword}'** 관련 결재 문서를 확인하시겠습니까?")
-        st.markdown(f"🔗 **[연세유업 전자결재함 '{gw_search_keyword}' 검색 결과 바로가기 (클릭)]({gw_search_url})**")
+        
+        st.link_button(f"👉 연세유업 전자결재함 '{gw_search_keyword}' 검색 바로가기", gw_search_url, type="primary")
+        
+        st.caption("※ 사내망 보안 정책으로 위 버튼 클릭 시 검색어가 초기화된다면, 아래 주소를 복사하여 직접 이동하세요.")
+        st.code(gw_search_url, language="http")
 
         if st.session_state.is_voice:
             autoplay_audio(st.session_state.final_briefing)
