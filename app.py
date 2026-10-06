@@ -137,58 +137,33 @@ KNOWLEDGE_BASE = {
 }
 
 # ==========================================
-# [0-1] 연세유업 사내 그룹웨어 참조/열람 문서함 숏-키워드 맵핑 사전
+# [0-1] 연세유업 사내 그룹웨어 전체 문서 리스트 
 # ==========================================
-GW_CATEGORY_MAP = {
-    "측정기기": "측정기기",
-    "카톤팩": "카톤팩",
-    "부적합": "부적합",
-    "자력기기": "자력기기",
-    "무균테스트": "무균테스트",
-    "콤비팩": "콤비팩",
-    "유량계": "유량계",
-    "테트라팩": "테트라팩",
-    "알러겐": "알러겐",
-    "손 위생": "작업자 손",
-    "작업자 손": "작업자 손",
+GW_DOC_LIST = [
+    "측정기기 공인기관 검·교정 결과", "자체 측정기기 검·교정결과", "카톤팩 과산화수소 잔류여부 검증 결과", 
+    "품질(제품, 원·부자재) 부적합 현황 보고", "자력기기 점검 결과", "상업적 무균테스트 결과 보고서", 
+    "콤비팩 과산화수소 잔류여부 검증 결과", "유량계 공인기관 교정 결과", "테트라팩 과산화수소 잔류여부 검증 결과", 
+    "알러겐 및 미생물 검증 결과", "작업자 손 위생검사 결과", "병원성 미생물 배지 수불부", "자가품질검사 검사결과", 
+    "우유 포장 공정관리 일보", "대리점 클레임 현황", "문제점 개선 대책 결과 보고", "소비자 클레임 현황(제조단계, 공장)", 
+    "시생산 결과보고", "현장 온도센서 공인기관 검·교정 결과", "본생산 결과 보고", "상온제품 OEM 입고 검수서", 
+    "발효유 포장 공정관리 일보", "발효유 공정관리 일보", "중국 수출 우유 제품검사 일보", "음료류 일반검사 일보", 
+    "두유류 일반검사 일보", "가공유(멸균) 일반검사 일보", "우유류(멸균) 일반검사 일보", "클린벤치 낙하세균 검사 결과", 
+    "부자재 입고 검수서", "우유류 냉장 보관 소비기한 경과 후 검사 결과", "압축공기 미생물검사 결과", 
+    "응결수 미생물검사 결과", "표면오염도 검사 결과", "낙하세균 검사 결과", "탈지분유 입고 검수 일보", 
+    "세척.소독제 농도 검증 결과", "상온제품 소비기한 만료 검증 결과", "대두 입고 검수 일보", "온/습도, 조도 측정 결과", 
+    "용수 검사 성적서", "원자재 입고 검수서", "미생물실 낙하세균 검사 결과", "발효유 제품검사 일보", "OEM 제품검사 일보", 
+    "미생물 검사 일보", "우유류 제품검사 일보", "두유액(원액두유) 일반 검사 일보", "상온제품 공정 관리 일보", 
+    "상온제품 배양검사 일보", "두유액(원액두유) 공정관리 일보", "우유류 샘플 상온검사일보", "병포장기 제품 상온검사 일보"
+]
+
+GW_KEYWORD_ALIASES = {
     "손위생": "작업자 손",
-    "배지": "배지",
-    "병원성": "병원성",
-    "자가품질": "자가품질",
-    "우유 포장": "우유 포장",
-    "대리점 클레임": "클레임",
-    "클레임": "클레임",
-    "개선 대책": "개선 대책",
-    "시생산": "시생산",
-    "온도센서": "온도센서",
-    "본생산": "본생산",
-    "상온 OEM": "상온",
-    "발효유": "발효유",
-    "중국 수출": "중국 수출",
-    "음료류": "음료류",
-    "두유류": "두유류",
-    "가공유": "가공유",
-    "우유류": "우유류",
-    "클린벤치": "클린벤치",
-    "부자재": "부자재",
-    "소비기한": "소비기한",
-    "압축공기": "압축공기",
-    "응결수": "응결수",
-    "표면오염도": "표면오염도",
-    "낙하세균": "낙하세균", 
-    "탈지분유": "탈지분유",
-    "세척": "세척",
-    "소독제": "소독제",
-    "대두": "대두",
-    "조도": "조도",
+    "손 위생": "작업자 손",
+    "조도": "온/습도",
     "온습도": "온/습도",
-    "용수": "용수",
-    "수질": "수질",
-    "원자재": "원자재",
-    "미생물실": "미생물실",
-    "미생물": "미생물",
-    "두유액": "두유액",
-    "병포장기": "병포장기"
+    "배지": "배지 수불부",
+    "수질": "용수 검사",
+    "원부자재": "부자재"
 }
 
 # ==========================================
@@ -196,7 +171,6 @@ GW_CATEGORY_MAP = {
 # ==========================================
 st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", layout="wide")
 
-# 세션 상태 초기화 (화면이 다시 그려져도 검색 상태 유지)
 if "search_done" not in st.session_state:
     st.session_state.search_done = False
     st.session_state.found_files = []
@@ -228,7 +202,6 @@ custom_theme_css = """
         color: #000000 !important;
     }
     
-    /* 버튼 디자인 수정 및 글자색 강제 고정 */
     [data-testid="stSidebar"] button {
         background-color: #3b82f6 !important; 
         border: none !important;
@@ -297,7 +270,7 @@ def get_credentials():
         return None
 
 # ==========================================
-# [3] 사이드바 설정 (st.form 적용 완료)
+# [3] 사이드바 설정 
 # ==========================================
 with st.sidebar:
     st.markdown("## 🥛 YONSEI DAIRY")
@@ -313,9 +286,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### ⌨️ 보조 텍스트 검색")
     
-    # 엔터키 작동을 위해 st.form 적용
     with st.form(key='search_form'):
-        manual_query = st.text_input("서류명 입력:", placeholder="예: 원자재, 살균온도", label_visibility="collapsed")
+        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
         manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
 
 # ==========================================
@@ -352,11 +324,24 @@ def search_multiple_drive_files(service, keyword, root_folder_id):
         else:
             query = f"fullText contains '{keyword}' and trashed = false and '{root_folder_id}' in parents"
 
-        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)', pageSize=10).execute()
+        # 💡 최대 15개를 긁어오기 (관련 서류 누락 방지)
+        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)', pageSize=15).execute()
         files = res.get('files', [])
-
         valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
-        return valid_files
+        
+        # 💡 스마트 정렬 로직: 검색어(keyword)가 파일 '제목'에 직접 포함되어 있으면 0순위로 강제 끌어올림
+        def get_relevance_score(file_name, search_kw):
+            fn_clean = file_name.replace(" ", "")
+            kw_clean = search_kw.replace(" ", "")
+            if kw_clean in fn_clean:
+                return 0 
+            words = search_kw.split()
+            if len(words) > 1 and any(w in file_name for w in words):
+                return 1
+            return 2 
+            
+        valid_files.sort(key=lambda x: get_relevance_score(x['name'], keyword))
+        return valid_files[:10]
     except Exception as e:
         st.error(f"검색 중 오류 발생: {e}")
         return []
@@ -399,7 +384,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
         intent_prompt = """
         사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 명사 단어 1~2개만 추출하세요. 
-        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '클린벤치', '알러겐', '부자재', '작업자 손', '원자재')를 도출하세요.
+        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '교육수료증', '알러겐', '부자재', '작업자 손', '미생물 검사일보')를 도출하세요.
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
 
@@ -491,7 +476,7 @@ with tab1:
             file_options = {f['name']: f for f in found_files}
             
             if len(found_files) > 1:
-                selected_file_name = st.selectbox("📂 조회할 문서를 선택하세요:", list(file_options.keys()))
+                selected_file_name = st.selectbox("📂 바로 열람할 문서를 선택하세요:", list(file_options.keys()))
             else:
                 selected_file_name = list(file_options.keys())[0]
                 st.markdown(f"**📂 자동 선택된 문서:** {selected_file_name}")
@@ -546,30 +531,59 @@ with tab1:
             with col2:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
-
-        # 3. 사내 그룹웨어 참조/열람 문서함 키워드 매칭 검색 (표준 URL 인코딩 적용)
-        st.markdown("---")
-        st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 검색")
-        
-        gw_search_keyword = keyword
-        
-        # 사내 공식 숏-키워드 매칭 로직
-        for key, short_keyword in GW_CATEGORY_MAP.items():
-            if key in keyword or key in st.session_state.query_text:
-                gw_search_keyword = short_keyword
-                break
                 
-        # 💡 웹 호환성 및 링크 깨짐을 100% 방지하기 위해 URL 표준 암호화(인코딩)를 확정 적용했습니다.
-        encoded_keyword = urllib.parse.quote(gw_search_keyword)
+            # ==========================================
+            # 💡 연관 문서 목록 리스트업 UI 추가 (다른 연도/목록 동시 파악)
+            # ==========================================
+            if len(found_files) > 1:
+                st.markdown("---")
+                st.markdown("### 📂 연관 문서 전체 목록 (한눈에 보기)")
+                st.caption(f"💡 심사관에게 '{keyword}'와 관련된 다른 파일(다른 연도, 타 부서 내역 등)을 아래 표에서 즉시 제안할 수 있습니다.")
+                
+                # 표(Table) 형태로 렌더링하기 위한 데이터 조립
+                list_data = []
+                for idx, f in enumerate(found_files, 1):
+                    # 현재 선택된 파일은 표시해주기
+                    is_current = "👈 (현재 열람중)" if f['id'] == file_id else ""
+                    # 마크다운 링크 생성
+                    link_md = f"[파일 열기]({f.get('webViewLink')})"
+                    list_data.append({
+                        "No.": idx,
+                        "검색된 연관 파일명": f.get('name') + " " + is_current,
+                        "즉시 이동": link_md
+                    })
+                
+                st.dataframe(
+                    list_data,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={"즉시 이동": st.column_config.LinkColumn()}
+                )
+
+        # 3. 사내 그룹웨어(전자결재) 연동 검색
+        st.markdown("---")
+        st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 안내")
         
-        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}&fromDate=&toDate=&duration=all"
+        search_term = keyword
+        for alias, real_term in GW_KEYWORD_ALIASES.items():
+            if alias in keyword or alias in st.session_state.query_text:
+                search_term = real_term
+                break
+        
+        related_docs = [doc for doc in GW_DOC_LIST if search_term in doc]
+        if not related_docs:
+            related_docs = [doc for doc in GW_DOC_LIST if keyword in doc]
             
-        st.info(f"💡 그룹웨어 문서함에서 **'{gw_search_keyword}'** 관련 결재 문서를 확인하시겠습니까?")
-        
-        st.link_button(f"👉 연세유업 전자결재함 '{gw_search_keyword}' 검색 바로가기", gw_search_url, type="primary")
-        
-        st.caption("※ 사내망 보안 정책으로 위 버튼 클릭 시 검색어가 초기화된다면, 아래 주소를 복사하여 직접 이동하세요.")
-        st.code(gw_search_url, language="http")
+        if related_docs:
+            st.info(f"💡 검색하신 '{keyword}' 항목과 관련된 **전자결재 문서**가 사내 그룹웨어에 보관되어 있습니다.")
+            doc_list_md = "\n".join([f"- {doc}" for doc in related_docs])
+            st.markdown(f"**[전자결재 보관 항목]**\n{doc_list_md}")
+            
+            st.write("해당 문서는 구글 드라이브가 아닌 아래의 사내 참조/열람 문서함에서 직접 확인해 주십시오.")
+            gw_base_url = "https://gw.yonseidairy.com/app/approval/doclist/viewer/all"
+            st.link_button("👉 연세유업 참조/열람 문서함 바로가기", gw_base_url, type="primary")
+        else:
+            st.info("💡 사내 그룹웨어 결재양식 중 해당 키워드와 직접적으로 일치하는 문서 목록이 없습니다. 위의 구글 드라이브 검색 결과나 AI 브리핑을 확인해주세요.")
 
         if st.session_state.is_voice:
             autoplay_audio(st.session_state.final_briefing)
