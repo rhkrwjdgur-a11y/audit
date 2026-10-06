@@ -9,6 +9,7 @@ import io
 import time
 import pandas as pd
 import datetime
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -314,7 +315,7 @@ with st.sidebar:
     
     # 엔터키 작동을 위해 st.form 적용
     with st.form(key='search_form'):
-        manual_query = st.text_input("서류명 입력:", placeholder="예: 부자재, 살균온도", label_visibility="collapsed")
+        manual_query = st.text_input("서류명 입력:", placeholder="예: 원자재, 살균온도", label_visibility="collapsed")
         manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
 
 # ==========================================
@@ -546,19 +547,22 @@ with tab1:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
 
-        # 3. 사내 그룹웨어 참조/열람 문서함 키워드 매칭 검색 (인코딩 제거 - 한글 직결)
+        # 3. 사내 그룹웨어 참조/열람 문서함 키워드 매칭 검색 (표준 URL 인코딩 적용)
         st.markdown("---")
         st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 검색")
         
         gw_search_keyword = keyword
         
+        # 사내 공식 숏-키워드 매칭 로직
         for key, short_keyword in GW_CATEGORY_MAP.items():
             if key in keyword or key in st.session_state.query_text:
                 gw_search_keyword = short_keyword
                 break
                 
-        # 💡 URL 인코딩(urllib.parse.quote)을 완전히 삭제하고 진짜 주소 형태 그대로 생성
-        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={gw_search_keyword}&fromDate=&toDate=&duration=all"
+        # 💡 웹 호환성 및 링크 깨짐을 100% 방지하기 위해 URL 표준 암호화(인코딩)를 확정 적용했습니다.
+        encoded_keyword = urllib.parse.quote(gw_search_keyword)
+        
+        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}&fromDate=&toDate=&duration=all"
             
         st.info(f"💡 그룹웨어 문서함에서 **'{gw_search_keyword}'** 관련 결재 문서를 확인하시겠습니까?")
         
