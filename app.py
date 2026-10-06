@@ -72,7 +72,7 @@ KNOWLEDGE_BASE = {
 
     # 11. 제품 회수 및 추적성 관리 기준 (제품회수 관리기준서)
     "회수등급별조치": "위해식품 발생 시, 1등급은 24시간 이내, 2등급은 48시간 이내, 3등급은 72시간 이내에 영업자에게 회수명령 공문을 전달해야 합니다. 회수명령을 받은 영업자는 1등급은 1일 이내, 2~3등급은 2일 이내에 관할 기관에 회수계획서를 보고해야 합니다.",
-    "회수교육및훈련": "회수 업무와 관련하여 1회/년 이상 식품안전팀원 대상 교육을 실시하며, 2회/년 이상 모의회수(추적성) 훈련을 주관합니다. 모의회수 훈련 시 원인 파악 및 추적 시간은 1시간 이내, 회수율은 100%를 목표로 합니다.",
+    "회수교육및훈련": "회수 업무와 관련하여 1회/년 이상 식품안전팀원 대상 교육을 실시하며, 2회/년 이상 모의회수(추적성) 훈련 주관합니다. 모의회수 훈련 시 원인 파악 및 추적 시간은 1시간 이내, 회수율은 100%를 목표로 합니다.",
     "추적성관리": "원부자재 입고부터 제품 출하까지 생산/작업/거래/검사 기록을 철저히 관리하여 추적성을 확보하며, 생산 및 판매 관련 서류는 2년간 보관합니다.",
 
     # 12. 보관 및 운반 관리 기준 (보관 및 운반 관리 기준서)
@@ -137,33 +137,75 @@ KNOWLEDGE_BASE = {
 }
 
 # ==========================================
-# [0-1] 연세유업 사내 그룹웨어 공식 결재양식 맵핑 사전
-# (검색어를 구체적인 공식 폴더/양식 명칭으로 변환하여 정확도를 100%로 끌어올립니다.)
+# [0-1] 연세유업 사내 그룹웨어 참조/열람 문서함 키워드 맵핑 사전
+# 주임님께서 제공해주신 실제 결재문서 리스트(약 50개 항목) 100% 매칭 완료
 # ==========================================
 GW_CATEGORY_MAP = {
-    "미생물": "미생물 검사",
-    "크림떡": "크림떡 검사",
-    "크림빵": "크림빵 미생물",
-    "탈지분유": "탈지분유",
-    "대두": "대두 입고",
-    "압축공기": "압축공기 미생물",
-    "미생물실": "미생물실 낙하",
-    "응결수": "응결수 미생물",
-    "클린벤치": "클린벤치 낙하세균",
-    "세척": "세척.소독제",
-    "소독제": "세척.소독제",
+    "측정기기 공인": "측정기기 공인기관 검·교정 결과",
+    "자체 측정기기": "자체 측정기기 검·교정결과",
+    "카톤팩 과산화수소": "카톤팩 과산화수소 잔류여부 검증 결과",
+    "부적합": "품질(제품, 원·부자재) 부적합 현황 보고",
+    "자력기기": "자력기기 점검 결과",
+    "상업적 무균": "상업적 무균테스트 결과 보고서",
+    "무균테스트": "상업적 무균테스트 결과 보고서",
+    "콤비팩 과산화수소": "콤비팩 과산화수소 잔류여부 검증 결과",
+    "유량계": "유량계 공인기관 교정 결과",
+    "테트라팩 과산화수소": "테트라팩 과산화수소 잔류여부 검증 결과",
+    "알러겐": "알러겐 및 미생물 검증 결과",
+    "손 위생": "작업자 손 위생검사 결과",
+    "작업자 손": "작업자 손 위생검사 결과",
+    "손위생": "작업자 손 위생검사 결과",
+    "배지 수불부": "병원성 미생물 배지 수불부",
+    "병원성": "병원성 미생물 배지 수불부",
+    "자가품질": "자가품질검사 검사결과",
+    "우유 포장": "우유 포장 공정관리 일보",
+    "대리점 클레임": "대리점 클레임 현황",
+    "개선 대책": "문제점 개선 대책 결과 보고",
+    "소비자 클레임": "소비자 클레임 현황(제조단계, 공장)",
+    "시생산": "시생산 결과보고",
+    "온도센서": "현장 온도센서 공인기관 검·교정 결과",
+    "본생산": "본생산 결과 보고",
+    "상온 OEM": "상온제품 OEM 입고 검수서",
+    "발효유 포장": "발효유 포장 공정관리 일보",
+    "발효유 공정": "발효유 공정관리 일보",
+    "중국 수출": "중국 수출 우유 제품검사 일보",
+    "음료류 일반": "음료류 일반검사 일보",
+    "두유류 일반": "두유류 일반검사 일보",
+    "가공유": "가공유(멸균) 일반검사 일보",
+    "우유류 일반": "우유류(멸균) 일반검사 일보",
+    "우유류(멸균)": "우유류(멸균) 일반검사 일보",
+    "클린벤치": "클린벤치 낙하세균 검사 결과",
+    "부자재": "부자재 입고 검수서",
+    "소비기한 경과": "우유류 냉장 보관 소비기한 경과 후 검사 결과",
+    "압축공기": "압축공기 미생물검사 결과",
+    "응결수": "응결수 미생물검사 결과",
+    "표면오염도": "표면오염도 검사 결과",
+    "낙하세균": "낙하세균 검사 결과", 
+    "탈지분유": "탈지분유 입고 검수 일보",
+    "세척": "세척.소독제 농도 검증 결과",
+    "소독제": "세척.소독제 농도 검증 결과",
+    "소비기한 만료": "상온제품 소비기한 만료 검증 결과",
+    "대두": "대두 입고 검수 일보",
+    "조도": "온/습도, 조도 측정 결과",
+    "온습도": "온/습도, 조도 측정 결과",
+    "온/습도": "온/습도, 조도 측정 결과",
     "용수": "용수 검사 성적서",
-    "표면오염도": "표면오염도 검사",
-    "낙하세균": "낙하세균 검사",
-    "알러겐": "알러겐 검사",
-    "손위생": "작업자 손 위생",
-    "작업자": "작업자 손 위생",
-    "수질": "정기 수질 검사",
-    "병원성": "병원성 미생물",
-    "자가품질": "자가품질",
-    "위생교육": "위생교육",
-    "협력업체": "협력업체",
-    "작업장": "작업장위생"
+    "수질": "용수 검사 성적서",
+    "원자재": "원자재 입고 검수서",
+    "미생물실": "미생물실 낙하세균 검사 결과",
+    "발효유 제품": "발효유 제품검사 일보",
+    "OEM 제품": "OEM 제품검사 일보",
+    "미생물 검사": "미생물 검사 일보",
+    "미생물검사": "미생물 검사 일보",
+    "우유류 제품": "우유류 제품검사 일보",
+    "두유액 일반": "두유액(원액두유) 일반 검사 일보",
+    "상온 공정": "상온제품 공정 관리 일보",
+    "상온제품 공정": "상온제품 공정 관리 일보",
+    "상온 배양": "상온제품 배양검사 일보",
+    "상온제품 배양": "상온제품 배양검사 일보",
+    "두유액 공정": "두유액(원액두유) 공정관리 일보",
+    "우유류 샘플": "우유류 샘플 상온검사일보",
+    "병포장기": "병포장기 제품 상온검사 일보"
 }
 
 # ==========================================
@@ -275,7 +317,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### ⌨️ 보조 텍스트 검색")
-    manual_query = st.text_input("서류명 입력:", placeholder="예: 알러겐 검사, 살균온도", label_visibility="collapsed")
+    manual_query = st.text_input("서류명 입력:", placeholder="예: 부자재, 살균온도", label_visibility="collapsed")
     manual_submit = st.button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
 
 # ==========================================
@@ -289,7 +331,6 @@ def get_drive_service():
 
 @st.cache_data(ttl=3600)
 def get_target_folder_ids(_service, root_folder_id):
-    """루트 폴더 및 모든 하위 폴더의 ID를 재귀적으로 스캔하여 캐싱합니다."""
     folders = [root_folder_id]
     def fetch_children(parent_id):
         q = f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
@@ -304,9 +345,6 @@ def get_target_folder_ids(_service, root_folder_id):
     return folders
 
 def search_multiple_drive_files(service, keyword, root_folder_id):
-    """
-    지정된 방문심사 폴더(및 하위 폴더) 내부로만 검색 영역을 철벽 제한하여 문서를 가져옵니다.
-    """
     try:
         target_folders = get_target_folder_ids(service, root_folder_id)
         
@@ -346,9 +384,6 @@ def autoplay_audio(text):
     os.remove(temp_filename)
 
 def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_active=False):
-    """ 
-    사용자가 검색 버튼을 눌렀을 때 1회 실행되어 파일 목록을 찾고 세션에 저장합니다.
-    """
     service = get_drive_service()
     if not service: return
 
@@ -366,7 +401,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
         intent_prompt = """
         사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 명사 단어 1~2개만 추출하세요. 
-        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '알러겐', '클린벤치', '수질검사', '온도센서')를 도출하세요.
+        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '클린벤치', '알러겐', '부자재', '작업자 손', '온도센서', '자력기기')를 도출하세요.
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
 
@@ -421,7 +456,6 @@ with tab1:
     if manual_submit and manual_query:
         execute_search_and_extract(query_text=manual_query, is_voice_active=use_voice_mode)
 
-    # =============== 검색 결과 렌더링 (State 유지) ===============
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
         question = st.session_state.search_question
@@ -430,7 +464,6 @@ with tab1:
         
         st.info(f"🔍 AI 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
         
-        # 1. 문서가 하나도 없을 때 (지식베이스 브리핑만 실행)
         if not found_files:
             st.warning(f"⚠️ 구글 드라이브(방문심사 폴더)에서 '{keyword}' 관련 서류를 찾지 못했습니다. 지식베이스를 기반으로만 답변합니다.")
             
@@ -459,7 +492,6 @@ with tab1:
             st.write("🤖 **AI 브리핑 결과:**")
             st.success(st.session_state.final_briefing)
 
-        # 2. 문서가 발견되었을 때 (Selectbox 및 PDF/AI 분석 출력)
         else:
             file_options = {f['name']: f for f in found_files}
             
@@ -520,15 +552,13 @@ with tab1:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
 
-        # 3. 사내 그룹웨어(전자결재) 다이렉트 카테고리 맵핑 검색 링크 생성
+        # 3. 사내 그룹웨어 참조/열람 문서함 키워드 매칭 검색 링크 생성 (URL 롤백 완료)
         st.markdown("---")
-        st.markdown("### 🏢 사내 그룹웨어(전자결재) 공식 양식 연동 검색")
+        st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 검색")
         
-        # 기본값은 AI 추출 키워드
         gw_search_keyword = keyword
         
-        # 사내 공식 양식명 매칭 로직 (이미지 분석 기반)
-        # 키워드나 원본 질문에 해당 단어가 있으면 공식 명칭으로 덮어씌움
+        # 사내 공식 키워드 매칭 로직
         for key, official_name in GW_CATEGORY_MAP.items():
             if key in keyword or key in st.session_state.query_text:
                 gw_search_keyword = official_name
@@ -536,11 +566,11 @@ with tab1:
                 
         encoded_keyword = urllib.parse.quote(gw_search_keyword)
         
-        # 공식 양식명(정확한 텍스트)을 keyword에 넣어 검색하면 해당 카테고리만 정확하게 필터링됨
-        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}"
-        
-        st.info(f"💡 그룹웨어에서 공식 양식인 **'{gw_search_keyword}'** 항목만 깔끔하게 모아서 보시겠습니까?")
-        st.markdown(f"🔗 **[연세유업 전자결재함 '{gw_search_keyword}' 전용 목록 바로가기 (클릭)]({gw_search_url})**")
+        # 💡 주임님께서 알려주신 '참조/열람 문서함' 전체 검색 URL 방식으로 완벽 롤백
+        gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}&fromDate=&toDate=&duration=all"
+            
+        st.info(f"💡 그룹웨어 문서함에서 **'{gw_search_keyword}'** 관련 결재 문서를 확인하시겠습니까?")
+        st.markdown(f"🔗 **[연세유업 전자결재함 '{gw_search_keyword}' 검색 결과 바로가기 (클릭)]({gw_search_url})**")
 
         if st.session_state.is_voice:
             autoplay_audio(st.session_state.final_briefing)
