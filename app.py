@@ -324,24 +324,11 @@ def search_multiple_drive_files(service, keyword, root_folder_id):
         else:
             query = f"fullText contains '{keyword}' and trashed = false and '{root_folder_id}' in parents"
 
-        # 💡 최대 15개를 긁어오기 (관련 서류 누락 방지)
-        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)', pageSize=15).execute()
+        # 💡 관련 연도 파일을 넉넉히 가져오기 위해 pageSize를 50으로 대폭 늘립니다.
+        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)', pageSize=50).execute()
         files = res.get('files', [])
         valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
-        
-        # 💡 스마트 정렬 로직: 검색어(keyword)가 파일 '제목'에 직접 포함되어 있으면 0순위로 강제 끌어올림
-        def get_relevance_score(file_name, search_kw):
-            fn_clean = file_name.replace(" ", "")
-            kw_clean = search_kw.replace(" ", "")
-            if kw_clean in fn_clean:
-                return 0 
-            words = search_kw.split()
-            if len(words) > 1 and any(w in file_name for w in words):
-                return 1
-            return 2 
-            
-        valid_files.sort(key=lambda x: get_relevance_score(x['name'], keyword))
-        return valid_files[:10]
+        return valid_files
     except Exception as e:
         st.error(f"검색 중 오류 발생: {e}")
         return []
@@ -384,7 +371,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
         intent_prompt = """
         사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 명사 단어 1~2개만 추출하세요. 
-        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '교육수료증', '알러겐', '부자재', '작업자 손', '미생물 검사일보')를 도출하세요.
+        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '교육수료증', '알러겐', '미생물 검사일보', '작업자 손', '원자재')를 도출하세요.
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
 
@@ -414,7 +401,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     st.session_state.found_files = found_files
     
     if found_files:
-        st.success(f"✅ 총 **{len(found_files)}개**의 문서를 찾았습니다. (소요시간: {time.time() - t_start:.1f}초)")
+        st.success(f"✅ 총 **{len(found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
 
 # ==========================================
 # [5] 메인 UI 탭 구성
@@ -439,12 +426,12 @@ with tab1:
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
         question = st.session_state.search_question
-        found_files = st.session_state.found_files
+        raw_files = st.session_state.found_files
         service = get_drive_service()
         
         st.info(f"🔍 AI 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
         
-        if not found_files:
+        if not raw_files:
             st.warning(f"⚠️ 구글 드라이브(방문심사 폴더)에서 '{keyword}' 관련 서류를 찾지 못했습니다. 지식베이스를 기반으로만 답변합니다.")
             
             if st.session_state.last_file_id != "KB_ONLY":
@@ -473,13 +460,46 @@ with tab1:
             st.success(st.session_state.final_briefing)
 
         else:
-            file_options = {f['name']: f for f in found_files}
+            # ==========================================
+            # 💡 연도별 스마트 그룹핑 및 최신순 정렬 로직 적용
+            # ==========================================
+            def get_year(name):
+                name_clean = name.replace(" ", "")
+                if "26." in name_clean or "2026" in name_clean or "26년" in name_clean: return "2026년도"
+                if "25." in name_clean or "2025" in name_clean or "25년" in name_clean: return "2025년도"
+                if "24." in name_clean or "2024" in name_clean or "24년" in name_clean: return "2024년도"
+                if "23." in name_clean or "2023" in name_clean or "23년" in name_clean: return "2023년도"
+                return "분류 없음(기타)"
             
-            if len(found_files) > 1:
-                selected_file_name = st.selectbox("📂 바로 열람할 문서를 선택하세요:", list(file_options.keys()))
+            def get_relevance_score(file_name, search_kw):
+                fn_clean = file_name.replace(" ", "")
+                kw_clean = search_kw.replace(" ", "")
+                if kw_clean in fn_clean: return 0 
+                return 1
+
+            for f in raw_files:
+                f['year'] = get_year(f['name'])
+
+            # 정렬 1차: 파일명 내림차순 (최신 날짜가 위로 오게)
+            raw_files.sort(key=lambda x: x['name'], reverse=True)
+            # 정렬 2차: 관련도 (키워드가 제목에 있으면 무조건 상위 노출)
+            raw_files.sort(key=lambda x: get_relevance_score(x['name'], keyword))
+
+            # 고유 연도 리스트 추출 및 최신 연도순(내림차순) 정렬
+            available_years = sorted(list(set([f['year'] for f in raw_files])), reverse=True)
+            
+            # 연도 탭(라디오 버튼) UI 구성
+            selected_year = st.radio("📅 조회할 연도(분류) 선택", available_years, horizontal=True)
+            
+            # 선택된 연도의 문서들만 셀렉트 박스에 렌더링
+            filtered_files = [f for f in raw_files if f['year'] == selected_year]
+            file_options = {f['name']: f for f in filtered_files}
+            
+            if len(filtered_files) > 1:
+                selected_file_name = st.selectbox(f"📂 {selected_year} 목록 중 바로 열람할 문서를 선택하세요:", list(file_options.keys()))
             else:
                 selected_file_name = list(file_options.keys())[0]
-                st.markdown(f"**📂 자동 선택된 문서:** {selected_file_name}")
+                st.markdown(f"**📂 {selected_year} 단일 문서 자동 선택:** {selected_file_name}")
                 
             top_file = file_options[selected_file_name]
             file_id = top_file['id']
@@ -533,22 +553,19 @@ with tab1:
                 st.success(st.session_state.final_briefing)
                 
             # ==========================================
-            # 💡 연관 문서 목록 리스트업 UI 추가 (다른 연도/목록 동시 파악)
+            # 💡 연관 문서 전체 목록 (연도 및 뷰어 링크 포함 테이블)
             # ==========================================
-            if len(found_files) > 1:
+            if len(raw_files) > 1:
                 st.markdown("---")
                 st.markdown("### 📂 연관 문서 전체 목록 (한눈에 보기)")
-                st.caption(f"💡 심사관에게 '{keyword}'와 관련된 다른 파일(다른 연도, 타 부서 내역 등)을 아래 표에서 즉시 제안할 수 있습니다.")
+                st.caption(f"💡 심사관에게 '{keyword}'와 관련된 전체 파일(다른 연도 이력 등)을 아래 표에서 즉시 제안할 수 있습니다.")
                 
-                # 표(Table) 형태로 렌더링하기 위한 데이터 조립
                 list_data = []
-                for idx, f in enumerate(found_files, 1):
-                    # 현재 선택된 파일은 표시해주기
+                for idx, f in enumerate(raw_files, 1):
                     is_current = "👈 (현재 열람중)" if f['id'] == file_id else ""
-                    # 마크다운 링크 생성
                     link_md = f"[파일 열기]({f.get('webViewLink')})"
                     list_data.append({
-                        "No.": idx,
+                        "연도분류": f['year'],
                         "검색된 연관 파일명": f.get('name') + " " + is_current,
                         "즉시 이동": link_md
                     })
@@ -560,7 +577,7 @@ with tab1:
                     column_config={"즉시 이동": st.column_config.LinkColumn()}
                 )
 
-        # 3. 사내 그룹웨어(전자결재) 연동 검색
+        # 3. 사내 그룹웨어(전자결재) 연동 안내
         st.markdown("---")
         st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 안내")
         
