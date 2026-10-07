@@ -270,27 +270,6 @@ def get_credentials():
         return None
 
 # ==========================================
-# [3] 사이드바 설정 
-# ==========================================
-with st.sidebar:
-    st.markdown("## 🥛 YONSEI DAIRY")
-    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
-    st.markdown("---")
-    use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
-
-    if use_voice_mode:
-        st.success("상태: **음성 모드 ON**")
-    else:
-        st.info("상태: **정숙 모드 ON**")
-
-    st.markdown("---")
-    st.markdown("### ⌨️ 보조 텍스트 검색")
-    
-    with st.form(key='search_form'):
-        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
-        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
-
-# ==========================================
 # [4] 속도 최적화 구글 드라이브 다중 검색 코어
 # ==========================================
 def get_drive_service():
@@ -324,8 +303,8 @@ def search_multiple_drive_files(service, keyword, root_folder_id):
         else:
             query = f"fullText contains '{keyword}' and trashed = false and '{root_folder_id}' in parents"
 
-        # 💡 관련 연도 파일을 넉넉히 가져오기 위해 pageSize를 50으로 대폭 늘립니다.
-        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType)', pageSize=50).execute()
+        # 💡 [업그레이드 2] createdTime 데이터를 추가로 불러옵니다.
+        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=50).execute()
         files = res.get('files', [])
         valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
         return valid_files
@@ -404,6 +383,43 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
         st.success(f"✅ 총 **{len(found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
 
 # ==========================================
+# [3] 사이드바 설정 (업그레이드 1: 퀵버튼 적용)
+# ==========================================
+with st.sidebar:
+    st.markdown("## 🥛 YONSEI DAIRY")
+    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
+    st.markdown("---")
+    use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
+
+    if use_voice_mode:
+        st.success("상태: **음성 모드 ON**")
+    else:
+        st.info("상태: **정숙 모드 ON**")
+
+    st.markdown("---")
+    st.markdown("### ⌨️ 보조 텍스트 검색")
+    
+    with st.form(key='search_form'):
+        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
+        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
+
+    # 💡 [업그레이드 1] 현장 심사관이 가장 많이 찾는 서류 퀵-패스 버튼
+    st.markdown("### ⚡ 현장심사 퀵 버튼")
+    q_col1, q_col2 = st.columns(2)
+    if q_col1.button("💧 수질검사", use_container_width=True):
+        execute_search_and_extract("수질검사 성적서", is_voice_active=use_voice_mode)
+    if q_col2.button("🐛 방충방서", use_container_width=True):
+        execute_search_and_extract("방충방서 기록", is_voice_active=use_voice_mode)
+    if q_col1.button("🌡️ 온도센서", use_container_width=True):
+        execute_search_and_extract("온도센서 교정", is_voice_active=use_voice_mode)
+    if q_col2.button("🦠 클린벤치", use_container_width=True):
+        execute_search_and_extract("클린벤치 낙하세균", is_voice_active=use_voice_mode)
+    if q_col1.button("🥜 알러겐", use_container_width=True):
+        execute_search_and_extract("알러겐 검증", is_voice_active=use_voice_mode)
+    if q_col2.button("🧑‍🏫 교육이력", use_container_width=True):
+        execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
+
+# ==========================================
 # [5] 메인 UI 탭 구성
 # ==========================================
 st.markdown("## 🛡️ AI 현장심사 대응 통합 포털")
@@ -461,14 +477,17 @@ with tab1:
 
         else:
             # ==========================================
-            # 💡 연도별 스마트 그룹핑 및 최신순 정렬 로직 적용
+            # 💡 [업그레이드 2] 파일 메타데이터(생성일) 기반 완벽한 연도 자동 분류
             # ==========================================
-            def get_year(name):
+            def get_year(name, created_time):
                 name_clean = name.replace(" ", "")
                 if "26." in name_clean or "2026" in name_clean or "26년" in name_clean: return "2026년도"
                 if "25." in name_clean or "2025" in name_clean or "25년" in name_clean: return "2025년도"
                 if "24." in name_clean or "2024" in name_clean or "24년" in name_clean: return "2024년도"
                 if "23." in name_clean or "2023" in name_clean or "23년" in name_clean: return "2023년도"
+                # 파일명에 연도가 없으면 구글 드라이브 시스템의 최초 업로드(생성) 연도를 추출하여 매칭!
+                if created_time:
+                    return f"{created_time[:4]}년도"
                 return "분류 없음(기타)"
             
             def get_relevance_score(file_name, search_kw):
@@ -478,20 +497,18 @@ with tab1:
                 return 1
 
             for f in raw_files:
-                f['year'] = get_year(f['name'])
+                f['year'] = get_year(f['name'], f.get('createdTime', ''))
 
             # 정렬 1차: 파일명 내림차순 (최신 날짜가 위로 오게)
             raw_files.sort(key=lambda x: x['name'], reverse=True)
             # 정렬 2차: 관련도 (키워드가 제목에 있으면 무조건 상위 노출)
             raw_files.sort(key=lambda x: get_relevance_score(x['name'], keyword))
 
-            # 고유 연도 리스트 추출 및 최신 연도순(내림차순) 정렬
             available_years = sorted(list(set([f['year'] for f in raw_files])), reverse=True)
             
-            # 연도 탭(라디오 버튼) UI 구성
-            selected_year = st.radio("📅 조회할 연도(분류) 선택", available_years, horizontal=True)
+            st.markdown("##### 📅 조회할 연도(분류) 선택")
+            selected_year = st.radio("연도 필터", available_years, horizontal=True, label_visibility="collapsed")
             
-            # 선택된 연도의 문서들만 셀렉트 박스에 렌더링
             filtered_files = [f for f in raw_files if f['year'] == selected_year]
             file_options = {f['name']: f for f in filtered_files}
             
@@ -522,14 +539,16 @@ with tab1:
                         gemini_file = genai.upload_file(path=tmp_doc_path)
                         kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False, indent=2)
                         
+                        # 💡 [업그레이드 3] AI 브리핑 출력 포맷을 가독성 높은 투트랙(Two-Track)으로 고도화
                         analysis_prompt = f"""
                         당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
                         [사내 규정 초정밀 지식베이스]\n{kb_str}\n
                         [심사관 요청/질문]\n{question if question else st.session_state.query_text}
-                        [행동 지침]
-                        1. 수치를 묻는 질문은 지식베이스의 팩트를 최우선 인용하여 명확한 숫자로 대답하세요.
-                        2. 첨부된 문서 내용을 바탕으로 심사관 질문에 부합하는 요약을 덧붙이세요.
-                        3. 정중하고 전문적인 톤앤매너를 유지하세요.
+                        
+                        [출력 형식 가이드라인]
+                        아래 두 가지 파트로 나누어 정중하게 답변하세요.
+                        1. 💡 **사내 HACCP 기준:** (지식베이스를 바탕으로 관련 규정 및 수치 답변)
+                        2. 📄 **제출된 문서 검증:** (업로드된 문서를 분석하여 심사관의 질문에 부합하는지 요약)
                         """
                         model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
                         response = model.generate_content([gemini_file, analysis_prompt])
@@ -552,9 +571,6 @@ with tab1:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
                 
-            # ==========================================
-            # 💡 연관 문서 전체 목록 (연도 및 뷰어 링크 포함 테이블)
-            # ==========================================
             if len(raw_files) > 1:
                 st.markdown("---")
                 st.markdown("### 📂 연관 문서 전체 목록 (한눈에 보기)")
