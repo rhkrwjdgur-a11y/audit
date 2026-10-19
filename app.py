@@ -270,6 +270,43 @@ def get_credentials():
         return None
 
 # ==========================================
+# [3] 사이드바 설정 
+# ==========================================
+with st.sidebar:
+    st.markdown("## 🥛 YONSEI DAIRY")
+    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
+    st.markdown("---")
+    use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
+
+    if use_voice_mode:
+        st.success("상태: **음성 모드 ON**")
+    else:
+        st.info("상태: **정숙 모드 ON**")
+
+    st.markdown("---")
+    st.markdown("### ⌨️ 보조 텍스트 검색")
+    
+    with st.form(key='search_form'):
+        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
+        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
+
+    # 💡 엉뚱한 문서가 나오지 않도록 퀵 버튼의 검색어를 단일 '핵심 명사'로 모두 수정했습니다.
+    st.markdown("### ⚡ 현장심사 퀵 버튼")
+    q_col1, q_col2 = st.columns(2)
+    if q_col1.button("💧 수질검사", use_container_width=True):
+        execute_search_and_extract("수질검사", is_voice_active=use_voice_mode)
+    if q_col2.button("🐛 방충방서", use_container_width=True):
+        execute_search_and_extract("방충방서", is_voice_active=use_voice_mode)
+    if q_col1.button("🌡️ 온도센서", use_container_width=True):
+        execute_search_and_extract("온도센서", is_voice_active=use_voice_mode)
+    if q_col2.button("🦠 클린벤치", use_container_width=True):
+        execute_search_and_extract("클린벤치", is_voice_active=use_voice_mode)
+    if q_col1.button("🥜 알러겐", use_container_width=True):
+        execute_search_and_extract("알러겐", is_voice_active=use_voice_mode)
+    if q_col2.button("🧑‍🏫 교육이력", use_container_width=True):
+        execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
+
+# ==========================================
 # [4] 속도 최적화 구글 드라이브 다중 검색 코어
 # ==========================================
 def get_drive_service():
@@ -303,7 +340,6 @@ def search_multiple_drive_files(service, keyword, root_folder_id):
         else:
             query = f"fullText contains '{keyword}' and trashed = false and '{root_folder_id}' in parents"
 
-        # 💡 [업그레이드 2] createdTime 데이터를 추가로 불러옵니다.
         res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=50).execute()
         files = res.get('files', [])
         valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
@@ -348,9 +384,10 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
         model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config={"temperature": 0.0})
 
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
+        # 💡 지시문을 더욱 엄격하게 변경: 무조건 '단일 명사'만 추출하게 하여 제목 매칭 정확도를 극대화합니다.
         intent_prompt = """
-        사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 명사 단어 1~2개만 추출하세요. 
-        '기준서', '문서'처럼 너무 포괄적인 단어는 절대 사용하지 말고, 질문의 대상을 구체적으로 지칭하는 단어(예: '교육수료증', '알러겐', '미생물 검사일보', '작업자 손', '원자재')를 도출하세요.
+        사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 '단일 명사(1개 단어)'만 추출하세요. 
+        예를 들어 '방충방서 기록 보여줘' -> '방충방서', '수질검사 성적서 찾아줘' -> '수질검사', '클린벤치 낙하세균' -> '클린벤치'
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
 
@@ -381,43 +418,6 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     
     if found_files:
         st.success(f"✅ 총 **{len(found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
-
-# ==========================================
-# [3] 사이드바 설정 (업그레이드 1: 퀵버튼 적용)
-# ==========================================
-with st.sidebar:
-    st.markdown("## 🥛 YONSEI DAIRY")
-    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
-    st.markdown("---")
-    use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
-
-    if use_voice_mode:
-        st.success("상태: **음성 모드 ON**")
-    else:
-        st.info("상태: **정숙 모드 ON**")
-
-    st.markdown("---")
-    st.markdown("### ⌨️ 보조 텍스트 검색")
-    
-    with st.form(key='search_form'):
-        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
-        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
-
-    # 💡 [업그레이드 1] 현장 심사관이 가장 많이 찾는 서류 퀵-패스 버튼
-    st.markdown("### ⚡ 현장심사 퀵 버튼")
-    q_col1, q_col2 = st.columns(2)
-    if q_col1.button("💧 수질검사", use_container_width=True):
-        execute_search_and_extract("수질검사 성적서", is_voice_active=use_voice_mode)
-    if q_col2.button("🐛 방충방서", use_container_width=True):
-        execute_search_and_extract("방충방서 기록", is_voice_active=use_voice_mode)
-    if q_col1.button("🌡️ 온도센서", use_container_width=True):
-        execute_search_and_extract("온도센서 교정", is_voice_active=use_voice_mode)
-    if q_col2.button("🦠 클린벤치", use_container_width=True):
-        execute_search_and_extract("클린벤치 낙하세균", is_voice_active=use_voice_mode)
-    if q_col1.button("🥜 알러겐", use_container_width=True):
-        execute_search_and_extract("알러겐 검증", is_voice_active=use_voice_mode)
-    if q_col2.button("🧑‍🏫 교육이력", use_container_width=True):
-        execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
 
 # ==========================================
 # [5] 메인 UI 탭 구성
@@ -458,9 +458,11 @@ with tab1:
                     아래의 [사내 규정 초정밀 지식베이스]를 기반으로 심사관의 질문에 즉각 답변하세요.
                     [사내 규정 초정밀 지식베이스]\n{kb_str}\n
                     [심사관 요청/질문]\n{question if question else st.session_state.query_text}
-                    [행동 지침]
-                    1. 질문이 살균 온도/시간, 여과망 사이즈 등 수치를 묻는다면 명확한 숫자로 즉시 대답하세요.
-                    2. 정중하고 전문적인 톤앤매너를 유지하세요.
+                    
+                    [출력 형식 가이드라인]
+                    아래 두 가지 파트로 나누어 정중하게 답변하세요.
+                    1. 💡 **사내 HACCP 기준:** (지식베이스를 바탕으로 관련 규정 및 수치 답변)
+                    2. 📄 **제출된 문서 검증:** (업로드된 문서를 분석하여 심사관의 질문에 부합하는지 요약)
                     """
                     try:
                         model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
@@ -476,32 +478,31 @@ with tab1:
             st.success(st.session_state.final_briefing)
 
         else:
-            # ==========================================
-            # 💡 [업그레이드 2] 파일 메타데이터(생성일) 기반 완벽한 연도 자동 분류
-            # ==========================================
             def get_year(name, created_time):
                 name_clean = name.replace(" ", "")
                 if "26." in name_clean or "2026" in name_clean or "26년" in name_clean: return "2026년도"
                 if "25." in name_clean or "2025" in name_clean or "25년" in name_clean: return "2025년도"
                 if "24." in name_clean or "2024" in name_clean or "24년" in name_clean: return "2024년도"
                 if "23." in name_clean or "2023" in name_clean or "23년" in name_clean: return "2023년도"
-                # 파일명에 연도가 없으면 구글 드라이브 시스템의 최초 업로드(생성) 연도를 추출하여 매칭!
                 if created_time:
                     return f"{created_time[:4]}년도"
                 return "분류 없음(기타)"
             
+            # 💡 연관성 스코어 로직 보강: 두 단어 이상일 때 쪼개서 파일명에 있는지 검사하여 유연성 획득
             def get_relevance_score(file_name, search_kw):
                 fn_clean = file_name.replace(" ", "")
                 kw_clean = search_kw.replace(" ", "")
                 if kw_clean in fn_clean: return 0 
-                return 1
+                words = [w for w in search_kw.split() if len(w) >= 2]
+                if words and any(w in fn_clean for w in words): return 1
+                return 2 
 
             for f in raw_files:
                 f['year'] = get_year(f['name'], f.get('createdTime', ''))
 
             # 정렬 1차: 파일명 내림차순 (최신 날짜가 위로 오게)
             raw_files.sort(key=lambda x: x['name'], reverse=True)
-            # 정렬 2차: 관련도 (키워드가 제목에 있으면 무조건 상위 노출)
+            # 정렬 2차: 관련도 (키워드가 제목에 있으면 무조건 상위 노출, 기준서 등은 뒤로 밀림)
             raw_files.sort(key=lambda x: get_relevance_score(x['name'], keyword))
 
             available_years = sorted(list(set([f['year'] for f in raw_files])), reverse=True)
@@ -539,7 +540,6 @@ with tab1:
                         gemini_file = genai.upload_file(path=tmp_doc_path)
                         kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False, indent=2)
                         
-                        # 💡 [업그레이드 3] AI 브리핑 출력 포맷을 가독성 높은 투트랙(Two-Track)으로 고도화
                         analysis_prompt = f"""
                         당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
                         [사내 규정 초정밀 지식베이스]\n{kb_str}\n
@@ -622,24 +622,32 @@ with tab1:
             autoplay_audio(st.session_state.final_briefing)
             st.session_state.is_voice = False 
 
+# ==========================================
+# 💡 [보너스 업그레이드] 수동 탐색기에 실제 14개 폴더 구조 완벽 반영
+# ==========================================
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
 
     FOLDER_DB = {
-        "1. 인허가 및 인증 서류": {
-            "인허가 서류": "folder_id_1a",
-            "인증서": "folder_id_1b",
-            "PL보험가입증서": "folder_id_1c"
+        "📂 1. 인허가 및 기준서": {
+            "인허가 서류": "folder_id_인허가서류",
+            "가설건축물": "folder_id_가설건축물",
+            "인증서": "folder_id_인증서",
+            "기준서": "folder_id_기준서",
+            "선행요건": "folder_id_선행요건"
         },
-        "2. 위생 및 환경 관리": {
+        "📂 2. 현장 위생 및 환경": {
             "수질검사": "1gPfqV7K2bs29fvR0fSjSFYx_gtObyzKh", 
-            "물탱크청소": "folder_id_2b",
-            "방충방서 관련 서류": "folder_id_2c"
+            "물탱크청소": "folder_id_물탱크청소",
+            "방충방서 관련 서류": "folder_id_방충방서관련서류",
+            "환경관리팀_폐기물계약서": "folder_id_환경관리팀_폐기물계약서"
         },
-        "3. 공장 운영 및 이력": {
-            "설비이력": "folder_id_3a",
-            "교육수료증": "folder_id_3b",
-            "생산실적보고": "folder_id_3c"
+        "📂 3. 교육 및 운영관리": {
+            "교육수료증": "folder_id_교육수료증",
+            "모의회수": "folder_id_모의회수",
+            "생산실적보고": "folder_id_생산실적보고",
+            "설비이력": "folder_id_설비이력",
+            "PL보험가입증명서": "folder_id_PL보험가입증명서"
         }
     }
 
@@ -663,7 +671,7 @@ with tab2:
 
                     files = results.get('files', [])
                     if not files:
-                        st.warning("등록된 문서가 없습니다.")
+                        st.warning("등록된 문서가 없거나 아직 폴더 ID가 코드에 입력되지 않았습니다.")
                     else:
                         display_data = []
                         for idx, f in enumerate(files, 1):
