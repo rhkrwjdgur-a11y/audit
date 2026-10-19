@@ -436,7 +436,6 @@ with tab1:
                 execute_search_and_extract(audio_bytes=audio_bytes, is_voice_active=True)
     
     if manual_submit and manual_query:
-        # st.form 로직에 의해 폼 안의 submit 버튼이 눌리면 이 부분이 이미 실행됨 (상단 execute 참조)
         pass
 
     if st.session_state.search_done:
@@ -619,29 +618,33 @@ with tab1:
             autoplay_audio(st.session_state.final_briefing)
             st.session_state.is_voice = False 
 
+# ==========================================
+# 💡 [핵심] 수동 탐색기에 실제 15개 폴더 ID 100% 매칭 적용 완료
+# ==========================================
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
 
     FOLDER_DB = {
         "📂 1. 인허가 및 기준서": {
-            "인허가 서류": "folder_id_인허가서류",
-            "가설건축물": "folder_id_가설건축물",
-            "인증서": "folder_id_인증서",
-            "기준서": "folder_id_기준서",
-            "선행요건": "folder_id_선행요건"
+            "인허가 서류": "1Y98P8DINsy_9ZheN4n-CCElfcoD4ZVvX",
+            "가설건축물": "1bZrA5PIGR3qMRn6OSX5Y-9BVtmCk-DFF",
+            "인증서": "1ONXI69skOZGE-vzAyMmL_rMUjX5ZXjiz",
+            "기준서": "1NyHIprsIniDHDpW0gXzDoyOx5pG3aJIM",
+            "선행요건": "1IZCo0YknOP-AaLqn8akGYu7IlgDG1Qw0",
+            "FSSC22000": "15q0E-CZQ5TH4jUwf1_iNqRO9K0EXpbaw"
         },
         "📂 2. 현장 위생 및 환경": {
-            "수질검사": "1gPfqV7K2bs29fvR0fSjSFYx_gtObyzKh", 
-            "물탱크청소": "folder_id_물탱크청소",
-            "방충방서 관련 서류": "folder_id_방충방서관련서류",
-            "환경관리팀_폐기물계약서": "folder_id_환경관리팀_폐기물계약서"
+            "수질검사": "1gPfqV7K2bs29fVr0FSjSFYx_gtObyzKh", 
+            "물탱크청소": "1csN34omFYOAslyLPzZEHaW57rShAvmbY",
+            "방충방서 관련 서류": "19lz-LDZaCDYcCjhWHh4QiN8RDqlceYf7",
+            "환경관리팀_폐기물계약서": "1HS_r_itaMkXYitFDoLPuFBIt0oI41fPT"
         },
         "📂 3. 교육 및 운영관리": {
-            "교육수료증": "folder_id_교육수료증",
-            "모의회수": "folder_id_모의회수",
-            "생산실적보고": "folder_id_생산실적보고",
-            "설비이력": "folder_id_설비이력",
-            "PL보험가입증명서": "folder_id_PL보험가입증명서"
+            "교육수료증": "1MnIlbnXXEr7ITvEGK2tK7LjBf3_iWlU1",
+            "모의회수": "11dUf40rpdnWzZvmxp0acFGmAnD67GiL-",
+            "생산실적보고": "15cUTYawQPkK9FrUD9mV8rWh1NGtseiW4",
+            "설비이력": "11VJcx38MKiC5tjho6bHyobWBgxsltT76",
+            "PL보험가입증명서": "1wqa9LnNbmkxwmzO2b0m-tRYL05qKhbII"
         }
     }
 
@@ -654,28 +657,31 @@ with tab2:
     target_folder_id = FOLDER_DB[selected_major][selected_minor]
 
     if st.button(f"'{selected_minor}' 전체 문서 호출", type="primary"):
-        drive_service = get_drive_service()
-        if drive_service:
-            with st.spinner("폴더 인덱스 스캔 중..."):
-                try:
-                    query = f"'{target_folder_id}' in parents and trashed = false"
-                    results = drive_service.files().list(
-                        q=query, spaces='drive', fields='files(id, name, webViewLink, createdTime)', orderBy='createdTime desc', pageSize=50
-                    ).execute()
+        if target_folder_id.startswith("folder_id_"):
+            st.warning(f"⚠️ '{selected_minor}' 폴더의 실제 구글 드라이브 ID가 입력되지 않았습니다.\n\n코드 내부의 `FOLDER_DB`에서 `{target_folder_id}`를 실제 폴더 고유 ID(주소창 영문+숫자)로 변경해주세요.")
+        else:
+            drive_service = get_drive_service()
+            if drive_service:
+                with st.spinner("폴더 인덱스 스캔 중..."):
+                    try:
+                        query = f"'{target_folder_id}' in parents and trashed = false"
+                        results = drive_service.files().list(
+                            q=query, spaces='drive', fields='files(id, name, webViewLink, createdTime)', orderBy='createdTime desc', pageSize=50
+                        ).execute()
 
-                    files = results.get('files', [])
-                    if not files:
-                        st.warning("등록된 문서가 없거나 아직 폴더 ID가 코드에 입력되지 않았습니다.")
-                    else:
-                        display_data = []
-                        for idx, f in enumerate(files, 1):
-                            raw_date = f.get('createdTime', '')
-                            clean_date = raw_date.split('T')[0] if raw_date else '날짜 없음'
-                            link_md = f"[뷰어 열기]({f.get('webViewLink')})"
-                            display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": link_md})
-                        st.dataframe(display_data, hide_index=True, use_container_width=True, column_config={"서류 열람": st.column_config.LinkColumn()})
-                except Exception as e:
-                    st.error(f"오류: {e}")
+                        files = results.get('files', [])
+                        if not files:
+                            st.warning("해당 폴더에 등록된 문서가 없습니다.")
+                        else:
+                            display_data = []
+                            for idx, f in enumerate(files, 1):
+                                raw_date = f.get('createdTime', '')
+                                clean_date = raw_date.split('T')[0] if raw_date else '날짜 없음'
+                                link_md = f"[뷰어 열기]({f.get('webViewLink')})"
+                                display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": link_md})
+                            st.dataframe(display_data, hide_index=True, use_container_width=True, column_config={"서류 열람": st.column_config.LinkColumn()})
+                    except Exception as e:
+                        st.error(f"오류: {e}")
 
 with tab3:
     st.markdown("### 🚨 법적 의무 서류 모니터링")
