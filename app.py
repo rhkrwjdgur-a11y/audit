@@ -112,7 +112,7 @@ KNOWLEDGE_BASE = {
 
     # 17. 음료 제조공정 및 HACCP PLAN
     "음료균질": "균질 시 돌(파인, 망고) 및 유산균음료는 150 bar, 스위플(사과, 레드오렌지, 샤인머스캣) 제품은 200 bar의 압력으로 균질합니다.",
-    "음료추출공정": "차(Tea) 추출 공정은 70~90℃ 열수로 20~50분간 추출하며, 백 필터(5μm) 및 마이크로 필터(1μm)를 사용합니다.",
+    "음료추출공정": "차(Tea) 추출 공정은 70~90℃ 열수로 20~50분간 추출하며, 백 필터(5μm) 및 마이크로 필터(1μm) 파우치 필터를 사용합니다.",
     "음료CCP1B_과채음료류": "과채음료, 과채주스, 혼합음료, 유산균음료, 액상차의 유액멸균(CCP-1B) 한계기준은 90~130℃(또는 135~150℃)에서 30~37초간입니다.",
     "음료CCP1B_혼합음료특정제품": "혼합음료(스위플 레드오렌지, 샤인머스캣, 과일펀치 제외)와 커피의 경우, 멸균 온도 135~150℃, 시간 30~37초간으로 관리하며, A2프로틴 오리지널의 경우 143~153℃, 3.6~4.4초간으로 관리합니다.",
     "음료CCP1B_커피": "커피의 유액멸균(CCP-1B) 한계기준은 135~150℃에서 10~14초간입니다.",
@@ -194,6 +194,10 @@ GW_KEYWORD_ALIASES = {
 # ==========================================
 st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", layout="wide")
 
+# 💡 캐시 세션 충돌 방지를 위한 안전장치 추가
+if "priority_keywords" not in st.session_state:
+    st.session_state.priority_keywords = []
+
 if "search_done" not in st.session_state:
     st.session_state.search_done = False
     st.session_state.found_files = []
@@ -208,7 +212,6 @@ if "search_done" not in st.session_state:
     st.session_state.last_audio_hash = None
     st.session_state.gw_keyword = ""
     st.session_state.target_folder_key = ""
-    st.session_state.priority_keywords = [] # 💡 정밀 타격용 우선순위 키워드 추가
 
 custom_theme_css = """
 <style>
@@ -604,12 +607,12 @@ with tab1:
         
         st.info(f"🔍 현재 타겟팅 중인 항목: **{keyword}**")
         
-        # 💡 [신규] 블랙리스트 필터링 및 서열화 적용
+        # 💡 [안전장치 적용 완료] get() 메서드 활용
         raw_files = [f for f in raw_files if not is_blacklisted(f['name'], keyword)]
-        if st.session_state.priority_keywords:
-            raw_files = sort_by_priority(raw_files, st.session_state.priority_keywords)
+        if st.session_state.get("priority_keywords", []):
+            raw_files = sort_by_priority(raw_files, st.session_state.get("priority_keywords", []))
         else:
-            raw_files.sort(key=lambda x: x['name'], reverse=True) # 기본 최신순
+            raw_files.sort(key=lambda x: x['name'], reverse=True)
 
         if not raw_files and st.session_state.target_folder_key is not None:
             st.warning("⚠️ 구글 드라이브(방문심사 폴더)에서 일치하는 서류를 찾지 못했습니다. 전자결재 목록이나 지식베이스 브리핑을 확인해주세요.")
@@ -640,7 +643,6 @@ with tab1:
             st.success(st.session_state.final_briefing)
 
         elif raw_files:
-            # 연도 속성 추가
             for f in raw_files:
                 f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
 
@@ -648,12 +650,11 @@ with tab1:
             
             st.markdown("##### 📅 조회할 연도(분류) 선택")
             
-            # 💡 [신규] '전체보기 (우선순위 정렬)' 옵션 신설 및 라디오 버튼 렌더링
             year_options = ["전체보기 (우선순위 정렬)"] + available_years
             selected_year_tab = st.radio("연도 필터", year_options, horizontal=True, label_visibility="collapsed")
             
             if selected_year_tab == "전체보기 (우선순위 정렬)":
-                filtered_files = raw_files # 이미 정렬됨
+                filtered_files = raw_files 
                 st.caption("📌 **[우선순위 고정 모드]** 핵심 필수 서류가 연도에 상관없이 최상단에 고정 노출됩니다.")
             else:
                 filtered_files = [f for f in raw_files if f['year'] == selected_year_tab]
