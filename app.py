@@ -270,44 +270,7 @@ def get_credentials():
         return None
 
 # ==========================================
-# [3] 사이드바 설정 
-# ==========================================
-with st.sidebar:
-    st.markdown("## 🥛 YONSEI DAIRY")
-    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
-    st.markdown("---")
-    use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
-
-    if use_voice_mode:
-        st.success("상태: **음성 모드 ON**")
-    else:
-        st.info("상태: **정숙 모드 ON**")
-
-    st.markdown("---")
-    st.markdown("### ⌨️ 보조 텍스트 검색")
-    
-    with st.form(key='search_form'):
-        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
-        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
-
-    # 💡 엉뚱한 문서가 나오지 않도록 퀵 버튼의 검색어를 단일 '핵심 명사'로 모두 수정했습니다.
-    st.markdown("### ⚡ 현장심사 퀵 버튼")
-    q_col1, q_col2 = st.columns(2)
-    if q_col1.button("💧 수질검사", use_container_width=True):
-        execute_search_and_extract("수질검사", is_voice_active=use_voice_mode)
-    if q_col2.button("🐛 방충방서", use_container_width=True):
-        execute_search_and_extract("방충방서", is_voice_active=use_voice_mode)
-    if q_col1.button("🌡️ 온도센서", use_container_width=True):
-        execute_search_and_extract("온도센서", is_voice_active=use_voice_mode)
-    if q_col2.button("🦠 클린벤치", use_container_width=True):
-        execute_search_and_extract("클린벤치", is_voice_active=use_voice_mode)
-    if q_col1.button("🥜 알러겐", use_container_width=True):
-        execute_search_and_extract("알러겐", is_voice_active=use_voice_mode)
-    if q_col2.button("🧑‍🏫 교육이력", use_container_width=True):
-        execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
-
-# ==========================================
-# [4] 속도 최적화 구글 드라이브 다중 검색 코어
+# [3] 속도 최적화 구글 드라이브 다중 검색 코어 (함수 먼저 선언)
 # ==========================================
 def get_drive_service():
     creds = get_credentials()
@@ -384,7 +347,6 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
         model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config={"temperature": 0.0})
 
     with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
-        # 💡 지시문을 더욱 엄격하게 변경: 무조건 '단일 명사'만 추출하게 하여 제목 매칭 정확도를 극대화합니다.
         intent_prompt = """
         사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 '단일 명사(1개 단어)'만 추출하세요. 
         예를 들어 '방충방서 기록 보여줘' -> '방충방서', '수질검사 성적서 찾아줘' -> '수질검사', '클린벤치 낙하세균' -> '클린벤치'
@@ -419,6 +381,43 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     if found_files:
         st.success(f"✅ 총 **{len(found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
 
+
+# ==========================================
+# [4] 사이드바 설정 (퀵 버튼 포함)
+# ==========================================
+with st.sidebar:
+    st.markdown("## 🥛 YONSEI DAIRY")
+    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
+    st.markdown("---")
+    use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
+
+    if use_voice_mode:
+        st.success("상태: **음성 모드 ON**")
+    else:
+        st.info("상태: **정숙 모드 ON**")
+
+    st.markdown("---")
+    st.markdown("### ⌨️ 보조 텍스트 검색")
+    
+    with st.form(key='search_form'):
+        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
+        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
+
+    st.markdown("### ⚡ 현장심사 퀵 버튼")
+    q_col1, q_col2 = st.columns(2)
+    if q_col1.button("💧 수질검사", use_container_width=True):
+        execute_search_and_extract("수질검사", is_voice_active=use_voice_mode)
+    if q_col2.button("🐛 방충방서", use_container_width=True):
+        execute_search_and_extract("방충방서", is_voice_active=use_voice_mode)
+    if q_col1.button("🌡️ 온도센서", use_container_width=True):
+        execute_search_and_extract("온도센서", is_voice_active=use_voice_mode)
+    if q_col2.button("🦠 클린벤치", use_container_width=True):
+        execute_search_and_extract("클린벤치", is_voice_active=use_voice_mode)
+    if q_col1.button("🥜 알러겐", use_container_width=True):
+        execute_search_and_extract("알러겐", is_voice_active=use_voice_mode)
+    if q_col2.button("🧑‍🏫 교육이력", use_container_width=True):
+        execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
+
 # ==========================================
 # [5] 메인 UI 탭 구성
 # ==========================================
@@ -437,7 +436,8 @@ with tab1:
                 execute_search_and_extract(audio_bytes=audio_bytes, is_voice_active=True)
     
     if manual_submit and manual_query:
-        execute_search_and_extract(query_text=manual_query, is_voice_active=use_voice_mode)
+        # st.form 로직에 의해 폼 안의 submit 버튼이 눌리면 이 부분이 이미 실행됨 (상단 execute 참조)
+        pass
 
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
@@ -488,7 +488,6 @@ with tab1:
                     return f"{created_time[:4]}년도"
                 return "분류 없음(기타)"
             
-            # 💡 연관성 스코어 로직 보강: 두 단어 이상일 때 쪼개서 파일명에 있는지 검사하여 유연성 획득
             def get_relevance_score(file_name, search_kw):
                 fn_clean = file_name.replace(" ", "")
                 kw_clean = search_kw.replace(" ", "")
@@ -500,9 +499,7 @@ with tab1:
             for f in raw_files:
                 f['year'] = get_year(f['name'], f.get('createdTime', ''))
 
-            # 정렬 1차: 파일명 내림차순 (최신 날짜가 위로 오게)
             raw_files.sort(key=lambda x: x['name'], reverse=True)
-            # 정렬 2차: 관련도 (키워드가 제목에 있으면 무조건 상위 노출, 기준서 등은 뒤로 밀림)
             raw_files.sort(key=lambda x: get_relevance_score(x['name'], keyword))
 
             available_years = sorted(list(set([f['year'] for f in raw_files])), reverse=True)
@@ -622,9 +619,6 @@ with tab1:
             autoplay_audio(st.session_state.final_briefing)
             st.session_state.is_voice = False 
 
-# ==========================================
-# 💡 [보너스 업그레이드] 수동 탐색기에 실제 14개 폴더 구조 완벽 반영
-# ==========================================
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
 
