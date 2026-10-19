@@ -61,7 +61,7 @@ KNOWLEDGE_BASE = {
     "CIP검증": "CIP 완료 후에는 pH Paper를 이용하여 세제 잔류 검사를 100% 실시하며, 세척 효과성 검증은 연 1회 주기로 유기물(알러겐 키트) 및 무기물(필터링 육안 점검) 검사를 실시합니다.",
     "수세미구분": "제조 설비(식품 접촉면) 청소용 수세미와 작업장 바닥 청소용 수세미는 색상을 엄격히 구분하여 보관 및 관리합니다.",
     
-    # 9. 설비 점검 및 폐기 (제조시설 관리 기준서)
+    # 9. 설 점검 및 폐기 (제조시설 관리 기준서)
     "설비시운전": "신규 설비 도입 시 시운전은 3단계로 진행됩니다. 1단계(전기/유압 작동 확인), 2단계(연속 사이클 부대설비 연계), 3단계(생산 제품 적합성 확인)를 거쳐 승인됩니다.",
     "설비폐기": "노후 설비 폐기는 부문장이 설비폐기 품의서를 작성하고, 총무부문장, 생산본부장 및 사장의 검토를 거쳐 최종적으로 법인본부장의 승인을 득한 후 폐기합니다.",
 
@@ -137,7 +137,28 @@ KNOWLEDGE_BASE = {
 }
 
 # ==========================================
-# [0-1] 연세유업 사내 그룹웨어 전체 문서 리스트 
+# [0-1] 구글 드라이브 폴더 1:1 매칭 DB (정밀 타격용)
+# ==========================================
+FLAT_FOLDER_DB = {
+    "인허가 서류": "1Y98P8DINsy_9ZheN4n-CCElfcoD4ZVvX",
+    "가설건축물": "1bZrA5PIGR3qMRn6OSX5Y-9BVtmCk-DFF",
+    "인증서": "1ONXI69skOZGE-vzAyMmL_rMUjX5ZXjiz",
+    "기준서": "1NyHIprsIniDHDpW0gXzDoyOx5pG3aJIM",
+    "선행요건": "1IZCo0YknOP-AaLqn8akGYu7IlgDG1Qw0",
+    "FSSC22000": "15q0E-CZQ5TH4jUwf1_iNqRO9K0EXpbaw",
+    "수질검사": "1gPfqV7K2bs29fVr0FSjSFYx_gtObyzKh", 
+    "물탱크청소": "1csN34omFYOAslyLPzZEHaW57rShAvmbY",
+    "방충방서 관련 서류": "19lz-LDZaCDYcCjhWHh4QiN8RDqlceYf7",
+    "환경관리팀_폐기물계약서": "1HS_r_itaMkXYitFDoLPuFBIt0oI41fPT",
+    "교육수료증": "1MnIlbnXXEr7ITvEGK2tK7LjBf3_iWlU1",
+    "모의회수": "11dUf40rpdnWzZvmxp0acFGmAnD67GiL-",
+    "생산실적보고": "15cUTYawQPkK9FrUD9mV8rWh1NGtseiW4",
+    "설비이력": "11VJcx38MKiC5tjho6bHyobWBgxsltT76",
+    "PL보험가입증명서": "1wqa9LnNbmkxwmzO2b0m-tRYL05qKhbII"
+}
+
+# ==========================================
+# [0-2] 사내 그룹웨어 전자결재 양식 리스트 및 맵핑 사전
 # ==========================================
 GW_DOC_LIST = [
     "측정기기 공인기관 검·교정 결과", "자체 측정기기 검·교정결과", "카톤팩 과산화수소 잔류여부 검증 결과", 
@@ -153,9 +174,11 @@ GW_DOC_LIST = [
     "세척.소독제 농도 검증 결과", "상온제품 소비기한 만료 검증 결과", "대두 입고 검수 일보", "온/습도, 조도 측정 결과", 
     "용수 검사 성적서", "원자재 입고 검수서", "미생물실 낙하세균 검사 결과", "발효유 제품검사 일보", "OEM 제품검사 일보", 
     "미생물 검사 일보", "우유류 제품검사 일보", "두유액(원액두유) 일반 검사 일보", "상온제품 공정 관리 일보", 
-    "상온제품 배양검사 일보", "두유액(원액두유) 공정관리 일보", "우유류 샘플 상온검사일보", "병포장기 제품 상온검사 일보"
+    "상온제품 배양검사 일보", "두유액(원액두유) 공정관리 일보", "우유류 샘플 상온검사일보", "병포장기 제품 상온검사 일보",
+    "방역관리 결과 보고", "위생교육"
 ]
 
+# (수동 검색창 이용 시 그룹웨어 공식 명칭으로 치환해주는 보조 맵핑)
 GW_KEYWORD_ALIASES = {
     "손위생": "작업자 손",
     "손 위생": "작업자 손",
@@ -183,6 +206,9 @@ if "search_done" not in st.session_state:
     st.session_state.view_url = ""
     st.session_state.is_voice = False
     st.session_state.last_audio_hash = None
+    # 💡 정밀 타격용 추가 변수
+    st.session_state.gw_keyword = ""
+    st.session_state.target_folder_key = ""
 
 custom_theme_css = """
 <style>
@@ -270,7 +296,7 @@ def get_credentials():
         return None
 
 # ==========================================
-# [3] 속도 최적화 구글 드라이브 다중 검색 코어
+# [3] 구글 드라이브 검색 코어 로직
 # ==========================================
 def get_drive_service():
     creds = get_credentials()
@@ -331,13 +357,51 @@ def autoplay_audio(text):
         st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
     os.remove(temp_filename)
 
-def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_active=False):
+# 💡 [핵심] 정밀 타격(Sniper) 전용 통합 검색 함수
+def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, is_voice=False):
+    service = get_drive_service()
+    if not service: return
+
+    st.session_state.search_done = True
+    st.session_state.is_voice = is_voice
+    st.session_state.query_text = display_keyword
+    st.session_state.search_keyword = display_keyword
+    st.session_state.search_question = display_keyword
+    st.session_state.target_folder_key = folder_key
+    st.session_state.gw_keyword = gw_keyword
+    st.session_state.last_file_id = "" 
+    st.session_state.found_files = []
+
+    t_start = time.time()
+    
+    # 지정된 폴더가 있으면 해당 폴더 내부만 뒤짐 (100% 정밀 매칭)
+    if folder_key and folder_key in FLAT_FOLDER_DB:
+        target_id = FLAT_FOLDER_DB[folder_key]
+        if not target_id.startswith("folder_id_"):
+            try:
+                query = f"'{target_id}' in parents and trashed = false"
+                res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=50).execute()
+                files = res.get('files', [])
+                valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
+                st.session_state.found_files = valid_files
+            except Exception as e:
+                st.error(f"폴더 검색 중 오류 발생: {e}")
+    # 지정 폴더가 없으면 넓게 검색 (AI 추출 우회)
+    elif folder_key == "":
+        st.session_state.found_files = search_multiple_drive_files(service, display_keyword, DRIVE_FOLDER_ID)
+        
+    st.success(f"✅ 정밀 탐색 완료! 총 **{len(st.session_state.found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
+
+# 수동 텍스트 검색용 기존 AI 추출 함수
+def execute_ai_search(query_text=None, audio_bytes=None, is_voice_active=False):
     service = get_drive_service()
     if not service: return
 
     st.session_state.search_done = True
     st.session_state.is_voice = is_voice_active
     st.session_state.query_text = query_text if query_text else ""
+    st.session_state.target_folder_key = None # 수동 검색 시 초기화
+    st.session_state.gw_keyword = None
     st.session_state.last_file_id = "" 
     
     t_start = time.time()
@@ -352,7 +416,6 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
         예를 들어 '방충방서 기록 보여줘' -> '방충방서', '수질검사 성적서 찾아줘' -> '수질검사', '클린벤치 낙하세균' -> '클린벤치'
         응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
         """
-
         if audio_bytes:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_audio:
                 tmp_audio.write(audio_bytes)
@@ -382,7 +445,7 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
         st.success(f"✅ 총 **{len(found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
 
 # ==========================================
-# [4] 사이드바 설정 (💡 원클릭 풀코스 - 심사관 모드 추가)
+# [4] 사이드바 설정 (💡 아코디언 방식의 심사관 원클릭 모드)
 # ==========================================
 with st.sidebar:
     st.markdown("## 🥛 YONSEI DAIRY")
@@ -396,7 +459,6 @@ with st.sidebar:
         st.info("상태: **정숙 모드 ON**")
     st.markdown("---")
 
-    # 탭으로 분리: 수동 검색 vs 심사관 모드
     sidebar_tab1, sidebar_tab2 = st.tabs(["🎯 심사관 모드", "✏️ 수동 검색"])
 
     with sidebar_tab2:
@@ -407,36 +469,53 @@ with st.sidebar:
 
     with sidebar_tab1:
         st.markdown("### ⚡ 심사 요구자료 원클릭")
+        st.caption("심사관이 요구하는 서류를 클릭하면 구글 드라이브와 전자결재 목록이 즉시 완벽 매칭되어 뜹니다.")
         
-        with st.expander("📝 1. 기준서 및 인허가"):
-            if st.button("영업신고증/품목제조보고서", use_container_width=True): execute_search_and_extract("인허가 서류", is_voice_active=use_voice_mode)
-            if st.button("공장평면도/동선도", use_container_width=True): execute_search_and_extract("평면도", is_voice_active=use_voice_mode)
+        with st.expander("📝 1. 기준서 및 인허가", expanded=True):
+            if st.button("영업신고증/품목제조보고서", use_container_width=True): 
+                execute_exact_match("영업신고증/품목제조보고서", folder_key="인허가 서류", gw_keyword="")
+            if st.button("식품 방어 및 사기예방", use_container_width=True): 
+                execute_exact_match("식품 방어 및 사기예방", folder_key="선행요건", gw_keyword="")
         
         with st.expander("🧼 2. 위생 및 환경 점검"):
-            if st.button("수질검사 성적서", use_container_width=True): execute_search_and_extract("수질검사", is_voice_active=use_voice_mode)
-            if st.button("방충방서 기록", use_container_width=True): execute_search_and_extract("방충방서", is_voice_active=use_voice_mode)
-            if st.button("작업자 손 위생", use_container_width=True): execute_search_and_extract("작업자 손", is_voice_active=use_voice_mode)
-            if st.button("클린벤치 낙하세균", use_container_width=True): execute_search_and_extract("클린벤치", is_voice_active=use_voice_mode)
-            if st.button("표면오염도 검사", use_container_width=True): execute_search_and_extract("표면오염도", is_voice_active=use_voice_mode)
-            if st.button("세척/소독 검증", use_container_width=True): execute_search_and_extract("세척.소독제", is_voice_active=use_voice_mode)
+            if st.button("수질검사 성적서", use_container_width=True): 
+                execute_exact_match("수질검사", folder_key="수질검사", gw_keyword="용수 검사 성적서")
+            if st.button("물탱크 청소 필증", use_container_width=True): 
+                execute_exact_match("물탱크 청소", folder_key="물탱크청소", gw_keyword="")
+            if st.button("방충방서 (연간계획 및 월간보고)", use_container_width=True): 
+                execute_exact_match("방충방서", folder_key="방충방서 관련 서류", gw_keyword="방역관리 결과 보고")
+            if st.button("작업자 손 위생 (현장검사)", use_container_width=True): 
+                execute_exact_match("작업자 손 위생", folder_key="", gw_keyword="작업자 손 위생검사 결과")
+            if st.button("클린벤치/미생물실 낙하세균", use_container_width=True): 
+                execute_exact_match("클린벤치", folder_key="", gw_keyword="낙하세균 검사 결과")
+            if st.button("세척/소독제 농도 검증", use_container_width=True): 
+                execute_exact_match("세척/소독", folder_key="", gw_keyword="세척.소독제 농도 검증 결과")
             
         with st.expander("⚙️ 3. 공정 및 설비 관리"):
-            if st.button("공정관리 일보 (CCP)", use_container_width=True): execute_search_and_extract("공정관리 일보", is_voice_active=use_voice_mode)
-            if st.button("자력기기 점검", use_container_width=True): execute_search_and_extract("자력기기", is_voice_active=use_voice_mode)
-            if st.button("온도센서 교정", use_container_width=True): execute_search_and_extract("온도센서", is_voice_active=use_voice_mode)
-            if st.button("계측기 검교정", use_container_width=True): execute_search_and_extract("검교정", is_voice_active=use_voice_mode)
+            if st.button("공정관리 일보 (CCP)", use_container_width=True): 
+                execute_exact_match("공정관리 일보", folder_key="", gw_keyword="공정관리 일보")
+            if st.button("계측기/온도센서 검교정", use_container_width=True): 
+                execute_exact_match("계측기/센서", folder_key="", gw_keyword="공인기관 검·교정 결과")
+            if st.button("자력기기 점검", use_container_width=True): 
+                execute_exact_match("자력기기", folder_key="", gw_keyword="자력기기 점검 결과")
+            if st.button("설비 점검 이력", use_container_width=True): 
+                execute_exact_match("설비점검", folder_key="설비이력", gw_keyword="")
             
         with st.expander("📦 4. 입고 및 제품 검사"):
-            if st.button("원자재 입고검수", use_container_width=True): execute_search_and_extract("원자재", is_voice_active=use_voice_mode)
-            if st.button("부자재 입고검수", use_container_width=True): execute_search_and_extract("부자재", is_voice_active=use_voice_mode)
-            if st.button("자가품질검사", use_container_width=True): execute_search_and_extract("자가품질", is_voice_active=use_voice_mode)
-            if st.button("제품 일반검사", use_container_width=True): execute_search_and_extract("일반검사", is_voice_active=use_voice_mode)
-            if st.button("알러겐 검증", use_container_width=True): execute_search_and_extract("알러겐", is_voice_active=use_voice_mode)
+            if st.button("원/부자재 입고검수", use_container_width=True): 
+                execute_exact_match("입고검수", folder_key="", gw_keyword="입고 검수서")
+            if st.button("자가품질 및 일반검사", use_container_width=True): 
+                execute_exact_match("품질검사", folder_key="", gw_keyword="일반검사 일보")
+            if st.button("알러겐 검증", use_container_width=True): 
+                execute_exact_match("알러겐", folder_key="", gw_keyword="알러겐 및 미생물 검증 결과")
             
         with st.expander("📚 5. 운영 및 기타 관리"):
-            if st.button("교육수료증 내역", use_container_width=True): execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
-            if st.button("클레임 현황", use_container_width=True): execute_search_and_extract("클레임", is_voice_active=use_voice_mode)
-            if st.button("모의회수 결과", use_container_width=True): execute_search_and_extract("모의회수", is_voice_active=use_voice_mode)
+            if st.button("교육수료증 내역", use_container_width=True): 
+                execute_exact_match("교육수료증", folder_key="교육수료증", gw_keyword="위생교육")
+            if st.button("클레임 및 부적합 현황", use_container_width=True): 
+                execute_exact_match("클레임/부적합", folder_key="", gw_keyword="부적합 현황 보고")
+            if st.button("모의회수 실시 결과", use_container_width=True): 
+                execute_exact_match("모의회수", folder_key="모의회수", gw_keyword="")
 
 # ==========================================
 # [5] 메인 UI 탭 구성
@@ -453,10 +532,10 @@ with tab1:
             audio_hash = hash(audio_bytes)
             if st.session_state.last_audio_hash != audio_hash:
                 st.session_state.last_audio_hash = audio_hash
-                execute_search_and_extract(audio_bytes=audio_bytes, is_voice_active=True)
+                execute_ai_search(audio_bytes=audio_bytes, is_voice_active=True)
     
     if manual_submit and manual_query:
-        execute_search_and_extract(query_text=manual_query, is_voice_active=use_voice_mode)
+        execute_ai_search(query_text=manual_query, is_voice_active=use_voice_mode)
 
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
@@ -464,10 +543,10 @@ with tab1:
         raw_files = st.session_state.found_files
         service = get_drive_service()
         
-        st.info(f"🔍 AI 추출 키워드: **{keyword}** / 📝 추가 질문: **{question if question else '단순 열람'}**")
+        st.info(f"🔍 현재 타겟팅 중인 항목: **{keyword}**")
         
-        if not raw_files:
-            st.warning(f"⚠️ 구글 드라이브(방문심사 폴더)에서 '{keyword}' 관련 서류를 찾지 못했습니다. 지식베이스를 기반으로만 답변합니다.")
+        if not raw_files and st.session_state.target_folder_key is not None:
+            st.warning("⚠️ 구글 드라이브(방문심사 폴더)에서 일치하는 서류를 찾지 못했습니다. 전자결재 목록이나 지식베이스 브리핑을 확인해주세요.")
             
             if st.session_state.last_file_id != "KB_ONLY":
                 with st.spinner("🤖 AI가 규정 지식베이스를 기반으로 답변을 작성 중입니다..."):
@@ -476,12 +555,10 @@ with tab1:
                     당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
                     아래의 [사내 규정 초정밀 지식베이스]를 기반으로 심사관의 질문에 즉각 답변하세요.
                     [사내 규정 초정밀 지식베이스]\n{kb_str}\n
-                    [심사관 요청/질문]\n{question if question else st.session_state.query_text}
+                    [심사관 요청항목]\n{question if question else keyword}
                     
                     [출력 형식 가이드라인]
-                    아래 두 가지 파트로 나누어 정중하게 답변하세요.
-                    1. 💡 **사내 HACCP 기준:** (지식베이스를 바탕으로 관련 규정 및 수치 답변)
-                    2. 📄 **제출된 문서 검증:** (업로드된 문서를 분석하여 심사관의 질문에 부합하는지 요약)
+                    1. 💡 **사내 HACCP 기준:** (지식베이스를 바탕으로 관련 규정 및 수치 답변. 문서가 없으므로 기준만 설명)
                     """
                     try:
                         model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
@@ -496,7 +573,7 @@ with tab1:
             st.write("🤖 **AI 브리핑 결과:**")
             st.success(st.session_state.final_briefing)
 
-        else:
+        elif raw_files:
             def get_year(name, created_time):
                 name_clean = name.replace(" ", "")
                 if "26." in name_clean or "2026" in name_clean or "26년" in name_clean: return "2026년도"
@@ -559,7 +636,7 @@ with tab1:
                         analysis_prompt = f"""
                         당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
                         [사내 규정 초정밀 지식베이스]\n{kb_str}\n
-                        [심사관 요청/질문]\n{question if question else st.session_state.query_text}
+                        [심사관 요청/질문]\n{question if question else keyword}
                         
                         [출력 형식 가이드라인]
                         아래 두 가지 파트로 나누어 정중하게 답변하세요.
@@ -590,7 +667,7 @@ with tab1:
             if len(raw_files) > 1:
                 st.markdown("---")
                 st.markdown("### 📂 연관 문서 전체 목록 (한눈에 보기)")
-                st.caption(f"💡 심사관에게 '{keyword}'와 관련된 전체 파일(다른 연도 이력 등)을 아래 표에서 즉시 제안할 수 있습니다.")
+                st.caption(f"💡 구글 드라이브에 보관된 '{keyword}' 관련 전체 파일(다른 연도 이력 등)입니다.")
                 
                 list_data = []
                 for idx, f in enumerate(raw_files, 1):
@@ -608,30 +685,43 @@ with tab1:
                     column_config={"즉시 이동": st.column_config.LinkColumn(display_text="뷰어 열기")}
                 )
 
-        # 3. 사내 그룹웨어(전자결재) 연동 안내
+        # 3. 사내 그룹웨어(전자결재) 1:1 정밀 맵핑 결과 출력
         st.markdown("---")
         st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 안내")
         
-        search_term = keyword
-        for alias, real_term in GW_KEYWORD_ALIASES.items():
-            if alias in keyword or alias in st.session_state.query_text:
-                search_term = real_term
-                break
-        
-        related_docs = [doc for doc in GW_DOC_LIST if search_term in doc]
-        if not related_docs:
-            related_docs = [doc for doc in GW_DOC_LIST if keyword in doc]
+        # 심사관 퀵 버튼을 통해 1:1 매칭 키워드가 들어온 경우
+        if st.session_state.gw_keyword:
+            gw_search_keyword = st.session_state.gw_keyword
+            related_docs = [doc for doc in GW_DOC_LIST if gw_search_keyword in doc]
+        else:
+            # 수동 텍스트 검색을 통해 들어온 경우 기존처럼 맵핑 사전을 거쳐 찾기
+            search_term = keyword
+            for alias, real_term in GW_KEYWORD_ALIASES.items():
+                if alias in keyword or alias in st.session_state.query_text:
+                    search_term = real_term
+                    break
+            related_docs = [doc for doc in GW_DOC_LIST if search_term in doc]
+            if not related_docs:
+                related_docs = [doc for doc in GW_DOC_LIST if keyword in doc]
             
-        if related_docs:
-            st.info(f"💡 검색하신 '{keyword}' 항목과 관련된 **전자결재 문서**가 사내 그룹웨어에 보관되어 있습니다.")
+            gw_search_keyword = search_term if related_docs else ""
+            
+        if gw_search_keyword and related_docs:
+            st.info(f"💡 해당 항목의 **동적(일일/월간) 결재 기록**이 사내 그룹웨어에 보관되어 있습니다.")
             doc_list_md = "\n".join([f"- {doc}" for doc in related_docs])
             st.markdown(f"**[전자결재 보관 항목]**\n{doc_list_md}")
             
-            st.write("해당 문서는 구글 드라이브가 아닌 아래의 사내 참조/열람 문서함에서 직접 확인해 주십시오.")
-            gw_base_url = "https://gw.yonseidairy.com/app/approval/doclist/viewer/all"
-            st.link_button("👉 연세유업 참조/열람 문서함 바로가기", gw_base_url, type="primary")
+            encoded_keyword = urllib.parse.quote(gw_search_keyword)
+            gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}&fromDate=&toDate=&duration=all"
+            
+            st.link_button(f"👉 연세유업 그룹웨어 [{gw_search_keyword}] 검색 바로가기", gw_search_url, type="primary")
+            st.caption("※ 보안 정책으로 위 버튼 클릭 시 검색어가 초기화된다면, 아래 검색어를 복사하여 그룹웨어에 직접 붙여넣으세요.")
+            st.code(gw_search_keyword, language="text")
         else:
-            st.info("💡 사내 그룹웨어 결재양식 중 해당 키워드와 직접적으로 일치하는 문서 목록이 없습니다. 위의 구글 드라이브 검색 결과나 AI 브리핑을 확인해주세요.")
+            if st.session_state.gw_keyword == "":
+                st.info("💡 해당 항목은 사내 그룹웨어가 아닌 **구글 드라이브(원본 보관) 또는 현장 출력물**로 검증하는 서류입니다.")
+            else:
+                st.info("💡 사내 그룹웨어 결재양식 중 해당 키워드와 직접적으로 일치하는 문서 목록이 없습니다.")
 
         if st.session_state.is_voice:
             autoplay_audio(st.session_state.final_briefing)
