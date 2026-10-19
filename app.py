@@ -575,18 +575,18 @@ with tab1:
                 list_data = []
                 for idx, f in enumerate(raw_files, 1):
                     is_current = "👈 (현재 열람중)" if f['id'] == file_id else ""
-                    link_md = f"[파일 열기]({f.get('webViewLink')})"
+                    # 💡 Streamlit Dataframe 뷰어 열기 버그 픽스 완료
                     list_data.append({
                         "연도분류": f['year'],
                         "검색된 연관 파일명": f.get('name') + " " + is_current,
-                        "즉시 이동": link_md
+                        "즉시 이동": f.get('webViewLink', '')
                     })
                 
                 st.dataframe(
                     list_data,
                     hide_index=True,
                     use_container_width=True,
-                    column_config={"즉시 이동": st.column_config.LinkColumn()}
+                    column_config={"즉시 이동": st.column_config.LinkColumn(display_text="파일 열기")}
                 )
 
         # 3. 사내 그룹웨어(전자결재) 연동 안내
@@ -619,7 +619,7 @@ with tab1:
             st.session_state.is_voice = False 
 
 # ==========================================
-# 💡 [핵심] 수동 탐색기에 실제 15개 폴더 ID 100% 매칭 적용 완료
+# [수동 탐색기 영역] 
 # ==========================================
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
@@ -677,9 +677,14 @@ with tab2:
                             for idx, f in enumerate(files, 1):
                                 raw_date = f.get('createdTime', '')
                                 clean_date = raw_date.split('T')[0] if raw_date else '날짜 없음'
-                                link_md = f"[뷰어 열기]({f.get('webViewLink')})"
-                                display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": link_md})
-                            st.dataframe(display_data, hide_index=True, use_container_width=True, column_config={"서류 열람": st.column_config.LinkColumn()})
+                                # 💡 Streamlit Dataframe 뷰어 열기 버그 픽스 완료
+                                display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": f.get('webViewLink', '')})
+                            st.dataframe(
+                                display_data, 
+                                hide_index=True, 
+                                use_container_width=True, 
+                                column_config={"서류 열람": st.column_config.LinkColumn(display_text="뷰어 열기")}
+                            )
                     except Exception as e:
                         st.error(f"오류: {e}")
 
