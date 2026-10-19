@@ -10,6 +10,7 @@ import time
 import pandas as pd
 import datetime
 import urllib.parse
+import re
 from concurrent.futures import ThreadPoolExecutor
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -61,7 +62,7 @@ KNOWLEDGE_BASE = {
     "CIP검증": "CIP 완료 후에는 pH Paper를 이용하여 세제 잔류 검사를 100% 실시하며, 세척 효과성 검증은 연 1회 주기로 유기물(알러겐 키트) 및 무기물(필터링 육안 점검) 검사를 실시합니다.",
     "수세미구분": "제조 설비(식품 접촉면) 청소용 수세미와 작업장 바닥 청소용 수세미는 색상을 엄격히 구분하여 보관 및 관리합니다.",
     
-    # 9. 설 점검 및 폐기 (제조시설 관리 기준서)
+    # 9. 설비 점검 및 폐기 (제조시설 관리 기준서)
     "설비시운전": "신규 설비 도입 시 시운전은 3단계로 진행됩니다. 1단계(전기/유압 작동 확인), 2단계(연속 사이클 부대설비 연계), 3단계(생산 제품 적합성 확인)를 거쳐 승인됩니다.",
     "설비폐기": "노후 설비 폐기는 부문장이 설비폐기 품의서를 작성하고, 총무부문장, 생산본부장 및 사장의 검토를 거쳐 최종적으로 법인본부장의 승인을 득한 후 폐기합니다.",
 
@@ -178,7 +179,6 @@ GW_DOC_LIST = [
     "방역관리 결과 보고", "위생교육"
 ]
 
-# (수동 검색창 이용 시 그룹웨어 공식 명칭으로 치환해주는 보조 맵핑)
 GW_KEYWORD_ALIASES = {
     "손위생": "작업자 손",
     "손 위생": "작업자 손",
@@ -206,9 +206,9 @@ if "search_done" not in st.session_state:
     st.session_state.view_url = ""
     st.session_state.is_voice = False
     st.session_state.last_audio_hash = None
-    # 💡 정밀 타격용 추가 변수
     st.session_state.gw_keyword = ""
     st.session_state.target_folder_key = ""
+    st.session_state.priority_keywords = [] # 💡 정밀 타격용 우선순위 키워드 추가
 
 custom_theme_css = """
 <style>
@@ -227,7 +227,6 @@ custom_theme_css = """
     [data-testid="stSidebar"] input {
         color: #000000 !important;
     }
-    
     [data-testid="stSidebar"] button {
         background-color: #3b82f6 !important; 
         border: none !important;
@@ -237,7 +236,6 @@ custom_theme_css = """
         color: #ffffff !important;
         font-weight: bold !important;
     }
-
     .stTabs [data-baseweb="tab-list"] {
         border-bottom: 2px solid #e2e8f0 !important;
         gap: 8px;
@@ -267,6 +265,57 @@ custom_theme_css = """
 </style>
 """
 st.markdown(custom_theme_css, unsafe_allow_html=True)
+
+# ==========================================
+# [1-1] 스마트 날짜 파싱 및 우선순위 필터링 유틸리티
+# ==========================================
+def extract_year_string(filename, created_time=""):
+    """파일명에서 정규식으로 연도를 스마트하게 추출합니다."""
+    name_clean = filename.replace(" ", "")
+    if "26." in name_clean or "2026" in name_clean or "26년" in name_clean: return "2026년도"
+    if "25." in name_clean or "2025" in name_clean or "25년" in name_clean: return "2025년도"
+    if "24." in name_clean or "2024" in name_clean or "24년" in name_clean: return "2024년도"
+    if "23." in name_clean or "2023" in name_clean or "23년" in name_clean: return "2023년도"
+    
+    # YYMMDD 정밀 매칭 (예: 241104)
+    match = re.search(r'(2[4-9])(0[1-9]|1[0-2])([0-2][1-9]|3[01])', name_clean)
+    if match: return f"20{match.group(1)}년도"
+    
+    if created_time:
+        return f"{created_time[:4]}년도"
+    return "분류 없음"
+
+def is_blacklisted(filename, category_name=""):
+    """시스템 찌꺼기 및 심사 제외 대상(후순위) 완벽 차단"""
+    if "Thumbs.db" in filename or filename.endswith(".txt"):
+        return True
+    
+    # 영업신고증 전용 차단 로직 (현장 심사 시 시선 분산 방지)
+    if "영업신고증" in category_name:
+        exclude_keywords = ["통신판매업", "집단급식소", "건강기능식품", "화장품", "지하수"]
+        if any(keyword in filename for keyword in exclude_keywords):
+            return True
+            
+    return False
+
+def sort_by_priority(files, priority_keywords):
+    """
+    정의된 1:1 정밀 타격 키워드 서열에 따라 파일을 정렬.
+    매칭되지 않는 파일은 후순위(999)로 밀어내고 동일 순위는 최신월 우선 내림차순 정렬
+    """
+    def get_priority_score(filename):
+        for index, keyword in enumerate(priority_keywords):
+            if keyword in filename:
+                return index
+        return 999 
+        
+    # 1. 파일명을 내림차순 정렬 (7월이 6월보다 위로 오도록)
+    files_sorted_by_name = sorted(files, key=lambda x: x['name'], reverse=True)
+    # 2. 우선순위 스코어로 오름차순 정렬 (파이썬 sort는 Stable 특성을 가짐)
+    files_sorted_by_name.sort(key=lambda x: get_priority_score(x['name']))
+    
+    return files_sorted_by_name
+
 
 # ==========================================
 # [2] 보안 설정 및 검증된 모델 선언
@@ -322,7 +371,6 @@ def get_target_folder_ids(_service, root_folder_id):
 def search_multiple_drive_files(service, keyword, root_folder_id):
     try:
         target_folders = get_target_folder_ids(service, root_folder_id)
-        
         if target_folders:
             parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
             query = f"fullText contains '{keyword}' and trashed = false and ({parents_query})"
@@ -357,8 +405,8 @@ def autoplay_audio(text):
         st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
     os.remove(temp_filename)
 
-# 💡 [핵심] 정밀 타격(Sniper) 전용 통합 검색 함수
-def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, is_voice=False):
+# 💡 [핵심] 정밀 타격(Sniper) 전용 통합 검색 함수 (우선순위 룰 적용)
+def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None, is_voice=False):
     service = get_drive_service()
     if not service: return
 
@@ -369,6 +417,7 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, is_vo
     st.session_state.search_question = display_keyword
     st.session_state.target_folder_key = folder_key
     st.session_state.gw_keyword = gw_keyword
+    st.session_state.priority_keywords = priority_keywords if priority_keywords else []
     st.session_state.last_file_id = "" 
     st.session_state.found_files = []
 
@@ -400,8 +449,9 @@ def execute_ai_search(query_text=None, audio_bytes=None, is_voice_active=False):
     st.session_state.search_done = True
     st.session_state.is_voice = is_voice_active
     st.session_state.query_text = query_text if query_text else ""
-    st.session_state.target_folder_key = None # 수동 검색 시 초기화
+    st.session_state.target_folder_key = None 
     st.session_state.gw_keyword = None
+    st.session_state.priority_keywords = []
     st.session_state.last_file_id = "" 
     
     t_start = time.time()
@@ -473,15 +523,24 @@ with st.sidebar:
         
         with st.expander("📝 1. 기준서 및 인허가", expanded=True):
             if st.button("영업신고증/품목제조보고서", use_container_width=True): 
-                execute_exact_match("영업신고증/품목제조보고서", folder_key="인허가 서류", gw_keyword="")
+                execute_exact_match("영업신고증", folder_key="인허가 서류", gw_keyword="", 
+                                    priority_keywords=["식품제조가공업", "유가공업", "집유업", "사업자등록증", "공장등록증", "영업등록증", "신고증"])
+            
+            if st.button("HACCP 및 글로벌 인증서", use_container_width=True): 
+                execute_exact_match("인증서", folder_key="인증서", gw_keyword="", 
+                                    priority_keywords=["가공두유", "유가공업", "과·채음료", "환자용", "혼합음료", "유산균음료", "FSSC22000", "원액두유", "액상차", "유기가공식품"])
+            
             if st.button("식품 방어 및 사기예방", use_container_width=True): 
-                execute_exact_match("식품 방어 및 사기예방", folder_key="선행요건", gw_keyword="")
+                execute_exact_match("식품방어 및 사기예방", folder_key="선행요건", gw_keyword="",
+                                    priority_keywords=["식품사기대응", "식품보안", "위기관리", "비상사태"])
         
         with st.expander("🧼 2. 위생 및 환경 점검"):
             if st.button("수질검사 성적서", use_container_width=True): 
-                execute_exact_match("수질검사", folder_key="수질검사", gw_keyword="용수 검사 성적서")
+                execute_exact_match("수질검사", folder_key="수질검사", gw_keyword="용수 검사 성적서",
+                                    priority_keywords=["정기 수질 검사", "노로바이러스", "먹는물", "상수도"])
             if st.button("물탱크 청소 필증", use_container_width=True): 
-                execute_exact_match("물탱크 청소", folder_key="물탱크청소", gw_keyword="")
+                execute_exact_match("물탱크 청소", folder_key="물탱크청소", gw_keyword="",
+                                    priority_keywords=["청소결과 Report", "신고증", "위생점검", "청소 기준"])
             if st.button("방충방서 (연간계획 및 월간보고)", use_container_width=True): 
                 execute_exact_match("방충방서", folder_key="방충방서 관련 서류", gw_keyword="방역관리 결과 보고")
             if st.button("작업자 손 위생 (현장검사)", use_container_width=True): 
@@ -545,6 +604,13 @@ with tab1:
         
         st.info(f"🔍 현재 타겟팅 중인 항목: **{keyword}**")
         
+        # 💡 [신규] 블랙리스트 필터링 및 서열화 적용
+        raw_files = [f for f in raw_files if not is_blacklisted(f['name'], keyword)]
+        if st.session_state.priority_keywords:
+            raw_files = sort_by_priority(raw_files, st.session_state.priority_keywords)
+        else:
+            raw_files.sort(key=lambda x: x['name'], reverse=True) # 기본 최신순
+
         if not raw_files and st.session_state.target_folder_key is not None:
             st.warning("⚠️ 구글 드라이브(방문심사 폴더)에서 일치하는 서류를 찾지 못했습니다. 전자결재 목록이나 지식베이스 브리핑을 확인해주세요.")
             
@@ -574,45 +640,35 @@ with tab1:
             st.success(st.session_state.final_briefing)
 
         elif raw_files:
-            def get_year(name, created_time):
-                name_clean = name.replace(" ", "")
-                if "26." in name_clean or "2026" in name_clean or "26년" in name_clean: return "2026년도"
-                if "25." in name_clean or "2025" in name_clean or "25년" in name_clean: return "2025년도"
-                if "24." in name_clean or "2024" in name_clean or "24년" in name_clean: return "2024년도"
-                if "23." in name_clean or "2023" in name_clean or "23년" in name_clean: return "2023년도"
-                if created_time:
-                    return f"{created_time[:4]}년도"
-                return "분류 없음(기타)"
-            
-            def get_relevance_score(file_name, search_kw):
-                fn_clean = file_name.replace(" ", "")
-                kw_clean = search_kw.replace(" ", "")
-                if kw_clean in fn_clean: return 0 
-                words = [w for w in search_kw.split() if len(w) >= 2]
-                if words and any(w in fn_clean for w in words): return 1
-                return 2 
-
+            # 연도 속성 추가
             for f in raw_files:
-                f['year'] = get_year(f['name'], f.get('createdTime', ''))
-
-            raw_files.sort(key=lambda x: x['name'], reverse=True)
-            raw_files.sort(key=lambda x: get_relevance_score(x['name'], keyword))
+                f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
 
             available_years = sorted(list(set([f['year'] for f in raw_files])), reverse=True)
             
             st.markdown("##### 📅 조회할 연도(분류) 선택")
-            selected_year = st.radio("연도 필터", available_years, horizontal=True, label_visibility="collapsed")
             
-            filtered_files = [f for f in raw_files if f['year'] == selected_year]
-            file_options = {f['name']: f for f in filtered_files}
+            # 💡 [신규] '전체보기 (우선순위 정렬)' 옵션 신설 및 라디오 버튼 렌더링
+            year_options = ["전체보기 (우선순위 정렬)"] + available_years
+            selected_year_tab = st.radio("연도 필터", year_options, horizontal=True, label_visibility="collapsed")
+            
+            if selected_year_tab == "전체보기 (우선순위 정렬)":
+                filtered_files = raw_files # 이미 정렬됨
+                st.caption("📌 **[우선순위 고정 모드]** 핵심 필수 서류가 연도에 상관없이 최상단에 고정 노출됩니다.")
+            else:
+                filtered_files = [f for f in raw_files if f['year'] == selected_year_tab]
+            
+            file_options = {f"{idx+1}. {f['name']}": f for idx, f in enumerate(filtered_files)}
             
             if len(filtered_files) > 1:
-                selected_file_name = st.selectbox(f"📂 {selected_year} 목록 중 바로 열람할 문서를 선택하세요:", list(file_options.keys()))
+                selected_file_label = st.selectbox(f"📂 {selected_year_tab} 목록 중 바로 열람할 문서를 선택하세요:", list(file_options.keys()))
+                selected_file_name = file_options[selected_file_label]['name']
             else:
-                selected_file_name = list(file_options.keys())[0]
-                st.markdown(f"**📂 {selected_year} 단일 문서 자동 선택:** {selected_file_name}")
+                selected_file_name = filtered_files[0]['name']
+                selected_file_label = list(file_options.keys())[0]
+                st.markdown(f"**📂 {selected_year_tab} 단일 문서 자동 선택:** {selected_file_name}")
                 
-            top_file = file_options[selected_file_name]
+            top_file = file_options[selected_file_label]
             file_id = top_file['id']
             
             if st.session_state.last_file_id != file_id:
@@ -666,8 +722,8 @@ with tab1:
                 
             if len(raw_files) > 1:
                 st.markdown("---")
-                st.markdown("### 📂 연관 문서 전체 목록 (한눈에 보기)")
-                st.caption(f"💡 구글 드라이브에 보관된 '{keyword}' 관련 전체 파일(다른 연도 이력 등)입니다.")
+                st.markdown("### 📂 연관 문서 전체 목록 (우선순위 서열 반영)")
+                st.caption(f"💡 현재 룰에 따라 필터링 및 서열 정리가 완료된 검색 결과입니다.")
                 
                 list_data = []
                 for idx, f in enumerate(raw_files, 1):
@@ -689,12 +745,10 @@ with tab1:
         st.markdown("---")
         st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 안내")
         
-        # 심사관 퀵 버튼을 통해 1:1 매칭 키워드가 들어온 경우
         if st.session_state.gw_keyword:
             gw_search_keyword = st.session_state.gw_keyword
             related_docs = [doc for doc in GW_DOC_LIST if gw_search_keyword in doc]
         else:
-            # 수동 텍스트 검색을 통해 들어온 경우 기존처럼 맵핑 사전을 거쳐 찾기
             search_term = keyword
             for alias, real_term in GW_KEYWORD_ALIASES.items():
                 if alias in keyword or alias in st.session_state.query_text:
