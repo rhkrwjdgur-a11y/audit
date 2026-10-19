@@ -270,7 +270,7 @@ def get_credentials():
         return None
 
 # ==========================================
-# [3] 속도 최적화 구글 드라이브 다중 검색 코어 (함수 먼저 선언)
+# [3] 속도 최적화 구글 드라이브 다중 검색 코어
 # ==========================================
 def get_drive_service():
     creds = get_credentials()
@@ -381,9 +381,8 @@ def execute_search_and_extract(query_text=None, audio_bytes=None, is_voice_activ
     if found_files:
         st.success(f"✅ 총 **{len(found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
 
-
 # ==========================================
-# [4] 사이드바 설정 (퀵 버튼 포함)
+# [4] 사이드바 설정 (💡 원클릭 풀코스 - 심사관 모드 추가)
 # ==========================================
 with st.sidebar:
     st.markdown("## 🥛 YONSEI DAIRY")
@@ -395,28 +394,49 @@ with st.sidebar:
         st.success("상태: **음성 모드 ON**")
     else:
         st.info("상태: **정숙 모드 ON**")
-
     st.markdown("---")
-    st.markdown("### ⌨️ 보조 텍스트 검색")
-    
-    with st.form(key='search_form'):
-        manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
-        manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
 
-    st.markdown("### ⚡ 현장심사 퀵 버튼")
-    q_col1, q_col2 = st.columns(2)
-    if q_col1.button("💧 수질검사", use_container_width=True):
-        execute_search_and_extract("수질검사", is_voice_active=use_voice_mode)
-    if q_col2.button("🐛 방충방서", use_container_width=True):
-        execute_search_and_extract("방충방서", is_voice_active=use_voice_mode)
-    if q_col1.button("🌡️ 온도센서", use_container_width=True):
-        execute_search_and_extract("온도센서", is_voice_active=use_voice_mode)
-    if q_col2.button("🦠 클린벤치", use_container_width=True):
-        execute_search_and_extract("클린벤치", is_voice_active=use_voice_mode)
-    if q_col1.button("🥜 알러겐", use_container_width=True):
-        execute_search_and_extract("알러겐", is_voice_active=use_voice_mode)
-    if q_col2.button("🧑‍🏫 교육이력", use_container_width=True):
-        execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
+    # 탭으로 분리: 수동 검색 vs 심사관 모드
+    sidebar_tab1, sidebar_tab2 = st.tabs(["🎯 심사관 모드", "✏️ 수동 검색"])
+
+    with sidebar_tab2:
+        st.markdown("### ⌨️ 보조 텍스트 검색")
+        with st.form(key='search_form'):
+            manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
+            manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
+
+    with sidebar_tab1:
+        st.markdown("### ⚡ 심사 요구자료 원클릭")
+        
+        with st.expander("📝 1. 기준서 및 인허가"):
+            if st.button("영업신고증/품목제조보고서", use_container_width=True): execute_search_and_extract("인허가 서류", is_voice_active=use_voice_mode)
+            if st.button("공장평면도/동선도", use_container_width=True): execute_search_and_extract("평면도", is_voice_active=use_voice_mode)
+        
+        with st.expander("🧼 2. 위생 및 환경 점검"):
+            if st.button("수질검사 성적서", use_container_width=True): execute_search_and_extract("수질검사", is_voice_active=use_voice_mode)
+            if st.button("방충방서 기록", use_container_width=True): execute_search_and_extract("방충방서", is_voice_active=use_voice_mode)
+            if st.button("작업자 손 위생", use_container_width=True): execute_search_and_extract("작업자 손", is_voice_active=use_voice_mode)
+            if st.button("클린벤치 낙하세균", use_container_width=True): execute_search_and_extract("클린벤치", is_voice_active=use_voice_mode)
+            if st.button("표면오염도 검사", use_container_width=True): execute_search_and_extract("표면오염도", is_voice_active=use_voice_mode)
+            if st.button("세척/소독 검증", use_container_width=True): execute_search_and_extract("세척.소독제", is_voice_active=use_voice_mode)
+            
+        with st.expander("⚙️ 3. 공정 및 설비 관리"):
+            if st.button("공정관리 일보 (CCP)", use_container_width=True): execute_search_and_extract("공정관리 일보", is_voice_active=use_voice_mode)
+            if st.button("자력기기 점검", use_container_width=True): execute_search_and_extract("자력기기", is_voice_active=use_voice_mode)
+            if st.button("온도센서 교정", use_container_width=True): execute_search_and_extract("온도센서", is_voice_active=use_voice_mode)
+            if st.button("계측기 검교정", use_container_width=True): execute_search_and_extract("검교정", is_voice_active=use_voice_mode)
+            
+        with st.expander("📦 4. 입고 및 제품 검사"):
+            if st.button("원자재 입고검수", use_container_width=True): execute_search_and_extract("원자재", is_voice_active=use_voice_mode)
+            if st.button("부자재 입고검수", use_container_width=True): execute_search_and_extract("부자재", is_voice_active=use_voice_mode)
+            if st.button("자가품질검사", use_container_width=True): execute_search_and_extract("자가품질", is_voice_active=use_voice_mode)
+            if st.button("제품 일반검사", use_container_width=True): execute_search_and_extract("일반검사", is_voice_active=use_voice_mode)
+            if st.button("알러겐 검증", use_container_width=True): execute_search_and_extract("알러겐", is_voice_active=use_voice_mode)
+            
+        with st.expander("📚 5. 운영 및 기타 관리"):
+            if st.button("교육수료증 내역", use_container_width=True): execute_search_and_extract("교육수료증", is_voice_active=use_voice_mode)
+            if st.button("클레임 현황", use_container_width=True): execute_search_and_extract("클레임", is_voice_active=use_voice_mode)
+            if st.button("모의회수 결과", use_container_width=True): execute_search_and_extract("모의회수", is_voice_active=use_voice_mode)
 
 # ==========================================
 # [5] 메인 UI 탭 구성
@@ -436,7 +456,7 @@ with tab1:
                 execute_search_and_extract(audio_bytes=audio_bytes, is_voice_active=True)
     
     if manual_submit and manual_query:
-        pass
+        execute_search_and_extract(query_text=manual_query, is_voice_active=use_voice_mode)
 
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
@@ -575,7 +595,6 @@ with tab1:
                 list_data = []
                 for idx, f in enumerate(raw_files, 1):
                     is_current = "👈 (현재 열람중)" if f['id'] == file_id else ""
-                    # 💡 Streamlit Dataframe 뷰어 열기 버그 픽스 완료
                     list_data.append({
                         "연도분류": f['year'],
                         "검색된 연관 파일명": f.get('name') + " " + is_current,
@@ -586,7 +605,7 @@ with tab1:
                     list_data,
                     hide_index=True,
                     use_container_width=True,
-                    column_config={"즉시 이동": st.column_config.LinkColumn(display_text="파일 열기")}
+                    column_config={"즉시 이동": st.column_config.LinkColumn(display_text="뷰어 열기")}
                 )
 
         # 3. 사내 그룹웨어(전자결재) 연동 안내
@@ -677,7 +696,6 @@ with tab2:
                             for idx, f in enumerate(files, 1):
                                 raw_date = f.get('createdTime', '')
                                 clean_date = raw_date.split('T')[0] if raw_date else '날짜 없음'
-                                # 💡 Streamlit Dataframe 뷰어 열기 버그 픽스 완료
                                 display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": f.get('webViewLink', '')})
                             st.dataframe(
                                 display_data, 
