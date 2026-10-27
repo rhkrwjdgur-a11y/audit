@@ -340,7 +340,7 @@ def execute_ai_search(query_text=None):
     })
     with st.spinner("AI 분석 중..."):
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-3.8-flash")
             intent_res = model.generate_content([f"요청: {query_text}", "단일 명사 핵심어(예: 수질검사, 인증서)를 JSON({\"search_keyword\": \"...\"})으로 반환해"])
             keyword = json.loads(intent_res.text.strip().replace("```json", "").replace("```", "")).get("search_keyword", query_text[:5])
         except:
@@ -459,7 +459,7 @@ with tab1:
                         1. 💡 사내 HACCP 기준
                         2. 📄 제출 문서 검증 요약
                         """
-                        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+                        model = genai.GenerativeModel(model_name="gemini-3.8-flash")
                         res = model.generate_content([gemini_file, prompt])
                         st.session_state.final_briefing = res.text
                     except Exception as e:
@@ -563,7 +563,7 @@ with tab4:
                 st.warning("스캔할 문서가 없습니다.")
             else:
                 new_db_entries = []
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-3.8-flash")
                 prompt = """이 문서의 핵심 제목(키워드), 발급일, 만료일(또는 유효기간)을 추출해. 
                 만료일이 없으면 '영구'로 기재해. 반드시 JSON 형식으로만 응답할 것.
                 형식: {"키워드": "가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
