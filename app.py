@@ -236,7 +236,6 @@ except:
     st.stop()
 
 MODEL_NAME = "models/gemini-3.8-flash"
-# 구글 시트 쓰기 권한 추가
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
 def get_credentials():
@@ -494,7 +493,6 @@ with tab1:
 # ----------------- TAB 2: 수동 탐색 -----------------
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
-    # 탐색기 구성 축약 없이 동일 렌더링용 단순화 구조
     st.info("좌측 사이드바 퀵 버튼을 이용하면 더 빠릅니다.")
 
 # ----------------- TAB 3: 대시보드 -----------------
@@ -522,7 +520,8 @@ with tab3:
             try:
                 expire_date = pd.to_datetime(row["만료일"]).date()
                 d_day = (expire_date - today).days
-                d_days.append(d_day)
+                # 💡 [핵심 수정] 숫자(d_day)를 문자열(str)로 통일하여 PyArrow 에러 원천 차단
+                d_days.append(str(d_day)) 
                 if d_day < 0: status_list.append("🚨 기간 경과 (즉시 갱신)")
                 elif d_day <= 30: status_list.append("⚠️ 갱신 임박 (30일 이내)")
                 else: status_list.append("🟢 정상")
