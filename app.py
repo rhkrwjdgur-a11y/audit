@@ -269,7 +269,6 @@ def extract_year_string(filename, created_time=""):
 def is_blacklisted(filename, category_name=""):
     if "Thumbs.db" in filename or filename.endswith(".txt"): return True
     if "영업신고증" in category_name and any(k in filename for k in ["통신판매", "집단급식", "화장품", "지하수"]): return True
-    # 💡 인증서 검색 시 엉뚱한 리스트 한글 파일(.hwp) 노출 원천 차단
     if "인증서" in category_name and ("리스트" in filename or filename.endswith(".hwp")): return True
     return False
 
@@ -281,7 +280,6 @@ def sort_files_smartly(files, priority_keywords, db_list):
         return 999 
 
     def get_expire_date(filename):
-        # 마스터 DB 리스트에서 해당 파일명(혹은 키워드)와 일치하는 행 검색
         for row in db_list:
             if row.get('파일명') == filename or (row.get('키워드') and row.get('키워드') in filename):
                 return str(row.get('만료일', '0000-00-00'))
@@ -325,7 +323,6 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     if folder_key and folder_key in FLAT_FOLDER_DB:
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
-            # 💡 하위 폴더 싹쓸이 관통 로직 적용 완료
             target_folders = get_target_folder_ids(service, target_id)
             parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
             query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_id}' in parents and trashed = false"
@@ -415,7 +412,6 @@ with tab1:
         
         raw_files = [f for f in st.session_state.found_files if not is_blacklisted(f['name'], keyword)]
         
-        # 💡 [핵심] 마스터 DB를 연동하여 정밀 서열화 적용
         db_list = st.session_state.auto_db
         if st.session_state.priority_keywords:
             raw_files = sort_files_smartly(raw_files, st.session_state.priority_keywords, db_list)
@@ -483,7 +479,6 @@ with tab1:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
 
-        # 전자결재 안내
         if st.session_state.gw_keyword:
             gw_kw = st.session_state.gw_keyword
             st.info(f"💡 전자결재(그룹웨어) 보관 서류: **{gw_kw}**")
@@ -500,7 +495,6 @@ with tab3:
     st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
     st.caption("※ 마스터 DB에서 데이터를 읽어와 실시간 D-Day를 계산합니다.")
     
-    # 💡 세션 상태의 DB 활용 (초기엔 더미 데이터 제공)
     if not st.session_state.auto_db:
         st.session_state.auto_db = [
             {"파일명": "HACCP 인증서_가공두유", "키워드": "가공두유", "발급일": "2026-04-06", "만료일": "2029-04-05", "법정주기(개월)": 36},
@@ -520,7 +514,6 @@ with tab3:
             try:
                 expire_date = pd.to_datetime(row["만료일"]).date()
                 d_day = (expire_date - today).days
-                # 💡 [핵심 수정] 숫자(d_day)를 문자열(str)로 통일하여 PyArrow 에러 원천 차단
                 d_days.append(str(d_day)) 
                 if d_day < 0: status_list.append("🚨 기간 경과 (즉시 갱신)")
                 elif d_day <= 30: status_list.append("⚠️ 갱신 임박 (30일 이내)")
@@ -557,43 +550,49 @@ with tab4:
         if target_folder.startswith("folder_id_"):
             st.error("실제 인증서 폴더 ID를 FLAT_FOLDER_DB에 입력해주세요.")
         else:
-            # 시뮬레이션: 인증서 폴더의 파일들을 가져와 AI 모델에 넘기는 로직
-            query = f"'{target_folder}' in parents and trashed = false"
-            res = service.files().list(q=query, fields='files(id, name, mimeType)', pageSize=5).execute() # 테스트용 5개 제한
+            # 💡 [핵심 수정] 하위 폴더 싹쓸이 관통 로직 적용
+            target_folders = get_target_folder_ids(service, target_folder)
+            parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
+            query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_folder}' in parents and trashed = false"
+            
+            # 테스트용 5개 제한을 풀고 넉넉히 가져옵니다.
+            res = service.files().list(q=query, fields='files(id, name, mimeType)', pageSize=50).execute() 
             files_to_scan = [f for f in res.get('files', []) if f['mimeType'] != 'application/vnd.google-apps.folder']
             
-            new_db_entries = []
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            prompt = """이 문서의 핵심 제목(키워드), 발급일, 만료일(또는 유효기간)을 추출해. 
-            만료일이 없으면 '영구'로 기재해. 반드시 JSON 형식으로만 응답할 것.
-            형식: {"키워드": "가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
-            
-            total = len(files_to_scan)
-            for i, f in enumerate(files_to_scan):
-                status_text.text(f"[{i+1}/{total}] '{f['name']}' AI 텍스트 추출 중...")
-                progress_bar.progress((i + 1) / total)
-                try:
-                    file_bytes = download_file_bytes(service, f['id'])
-                    ext = ".pdf" if "pdf" in f['mimeType'] else ".jpg"
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                        tmp.write(file_bytes)
-                        tmp_path = tmp.name
+            if not files_to_scan:
+                st.warning("스캔할 문서가 없습니다.")
+            else:
+                new_db_entries = []
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                prompt = """이 문서의 핵심 제목(키워드), 발급일, 만료일(또는 유효기간)을 추출해. 
+                만료일이 없으면 '영구'로 기재해. 반드시 JSON 형식으로만 응답할 것.
+                형식: {"키워드": "가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
+                
+                total = len(files_to_scan)
+                for i, f in enumerate(files_to_scan):
+                    status_text.text(f"[{i+1}/{total}] '{f['name']}' AI 텍스트 추출 중...")
+                    progress_bar.progress((i + 1) / total)
+                    try:
+                        file_bytes = download_file_bytes(service, f['id'])
+                        ext = ".pdf" if "pdf" in f['mimeType'].lower() else ".jpg"
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                            tmp.write(file_bytes)
+                            tmp_path = tmp.name
+                            
+                        up_file = genai.upload_file(path=tmp_path)
+                        ai_res = model.generate_content([up_file, prompt])
                         
-                    up_file = genai.upload_file(path=tmp_path)
-                    ai_res = model.generate_content([up_file, prompt])
-                    
-                    # JSON 파싱
-                    parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
-                    parsed["파일명"] = f['name']
-                    new_db_entries.append(parsed)
-                    
-                    genai.delete_file(up_file.name)
-                    os.remove(tmp_path)
-                except Exception as e:
-                    pass # 오류 건너뛰기
-            
-            if new_db_entries:
-                st.session_state.auto_db = new_db_entries # 결과 저장
-                status_text.text("✅ AI 스캔 완료! 마스터 DB가 최신 상태로 동기화되었습니다.")
-                st.success("데이터 추출 성공! 3번 '유효기간 대시보드' 탭에서 갱신된 결과를 확인하세요.")
-                st.json(new_db_entries)
+                        parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
+                        parsed["파일명"] = f['name']
+                        new_db_entries.append(parsed)
+                        
+                        genai.delete_file(up_file.name)
+                        os.remove(tmp_path)
+                    except Exception as e:
+                        pass
+                
+                if new_db_entries:
+                    st.session_state.auto_db = new_db_entries
+                    status_text.text("✅ AI 스캔 완료! 마스터 DB가 최신 상태로 동기화되었습니다.")
+                    st.success("데이터 추출 성공! 3번 '유효기간 대시보드' 탭에서 갱신된 결과를 확인하세요.")
+                    st.json(new_db_entries)
