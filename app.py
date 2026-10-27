@@ -224,6 +224,19 @@ custom_theme_css = """
         background-color: #0b2545 !important;
         border-right: 1px solid #000000 !important;
     }
+    
+    /* 👇 사이드바 아코디언(Expander) 흰색 배경 문제 해결 CSS 추가 👇 */
+    [data-testid="stSidebar"] [data-testid="stExpander"] details {
+        background-color: #0b2545 !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary, 
+    [data-testid="stSidebar"] [data-testid="stExpander"] div[data-testid="stExpanderDetails"] {
+        background-color: transparent !important;
+    }
+    /* 👆 여기까지 👆 */
+    
     [data-testid="stSidebar"] * {
         color: #ffffff !important;
     }
@@ -298,6 +311,10 @@ def is_blacklisted(filename, category_name=""):
         exclude_keywords = ["통신판매업", "집단급식소", "건강기능식품", "화장품", "지하수"]
         if any(keyword in filename for keyword in exclude_keywords):
             return True
+            
+    # 💡 [핵심 수정] 인증서 검색 시 엉뚱한 리스트 한글 파일(.hwp) 노출 원천 차단
+    if "인증서" in category_name and ("리스트" in filename or filename.endswith(".hwp")):
+        return True
             
     return False
 
@@ -431,8 +448,15 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
             try:
-                query = f"'{target_id}' in parents and trashed = false"
-                res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=50).execute()
+                # 💡 [핵심 수정] 최상위 폴더뿐만 아니라 하위 폴더까지 뚫고 들어가도록 수정
+                target_folders = get_target_folder_ids(service, target_id)
+                if target_folders:
+                    parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
+                    query = f"trashed = false and ({parents_query})"
+                else:
+                    query = f"'{target_id}' in parents and trashed = false"
+                    
+                res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=100).execute()
                 files = res.get('files', [])
                 valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
                 st.session_state.found_files = valid_files
@@ -607,7 +631,7 @@ with tab1:
         
         st.info(f"🔍 현재 타겟팅 중인 항목: **{keyword}**")
         
-        # 💡 [안전장치 적용 완료] get() 메서드 활용
+        # 💡 [안전장치 적용 완료] get() 메서드 활용 및 블랙리스트 정밀 검사
         raw_files = [f for f in raw_files if not is_blacklisted(f['name'], keyword)]
         if st.session_state.get("priority_keywords", []):
             raw_files = sort_by_priority(raw_files, st.session_state.get("priority_keywords", []))
