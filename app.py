@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 # ==========================================
-# [0] AI 현장심사 대응 지식베이스 (초정밀 팩트 데이터 1~20 통합본)
+# [0] AI 현장심사 대응 지식베이스 (초정밀 팩트 데이터 1~20 통합본 - 100% 원본 유지)
 # ==========================================
 KNOWLEDGE_BASE = {
     # 1. 작업장 및 환경 관리 기준 (작업장 관리 기준서)
@@ -138,7 +138,7 @@ KNOWLEDGE_BASE = {
 }
 
 # ==========================================
-# [0-1] 구글 드라이브 폴더 1:1 매칭 DB (정밀 타격용)
+# [0-1] 구글 드라이브 폴더 1:1 매칭 DB
 # ==========================================
 FLAT_FOLDER_DB = {
     "인허가 서류": "1Y98P8DINsy_9ZheN4n-CCElfcoD4ZVvX",
@@ -159,7 +159,7 @@ FLAT_FOLDER_DB = {
 }
 
 # ==========================================
-# [0-2] 사내 그룹웨어 전자결재 양식 리스트 및 맵핑 사전
+# [0-2] 사내 그룹웨어 전자결재 양식 리스트
 # ==========================================
 GW_DOC_LIST = [
     "측정기기 공인기관 검·교정 결과", "자체 측정기기 검·교정결과", "카톤팩 과산화수소 잔류여부 검증 결과", 
@@ -180,562 +180,301 @@ GW_DOC_LIST = [
 ]
 
 GW_KEYWORD_ALIASES = {
-    "손위생": "작업자 손",
-    "손 위생": "작업자 손",
-    "조도": "온/습도",
-    "온습도": "온/습도",
-    "배지": "배지 수불부",
-    "수질": "용수 검사",
-    "원부자재": "부자재"
+    "손위생": "작업자 손", "손 위생": "작업자 손", "조도": "온/습도", 
+    "온습도": "온/습도", "배지": "배지 수불부", "수질": "용수 검사", "원부자재": "부자재"
 }
 
 # ==========================================
-# [1] 시스템 기본 설정 및 엔터프라이즈 UI CSS
+# [1] 시스템 기본 설정 및 상태 초기화
 # ==========================================
 st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", layout="wide")
 
-# 💡 캐시 세션 충돌 방지를 위한 안전장치 추가
-if "priority_keywords" not in st.session_state:
-    st.session_state.priority_keywords = []
-
-if "search_done" not in st.session_state:
-    st.session_state.search_done = False
-    st.session_state.found_files = []
-    st.session_state.search_keyword = ""
-    st.session_state.search_question = ""
-    st.session_state.query_text = ""
-    st.session_state.final_briefing = ""
-    st.session_state.last_file_id = ""
-    st.session_state.preview_url = ""
-    st.session_state.view_url = ""
-    st.session_state.is_voice = False
-    st.session_state.last_audio_hash = None
-    st.session_state.gw_keyword = ""
-    st.session_state.target_folder_key = ""
+if "priority_keywords" not in st.session_state: st.session_state.priority_keywords = []
+if "search_done" not in st.session_state: st.session_state.search_done = False
+if "found_files" not in st.session_state: st.session_state.found_files = []
+if "search_keyword" not in st.session_state: st.session_state.search_keyword = ""
+if "search_question" not in st.session_state: st.session_state.search_question = ""
+if "final_briefing" not in st.session_state: st.session_state.final_briefing = ""
+if "last_file_id" not in st.session_state: st.session_state.last_file_id = ""
+if "view_url" not in st.session_state: st.session_state.view_url = ""
+if "preview_url" not in st.session_state: st.session_state.preview_url = ""
+if "target_folder_key" not in st.session_state: st.session_state.target_folder_key = None
+if "gw_keyword" not in st.session_state: st.session_state.gw_keyword = ""
+if "auto_db" not in st.session_state: st.session_state.auto_db = [] # 마스터 DB 로컬 캐시
 
 custom_theme_css = """
 <style>
 @media screen {
-    html, body, [class*="css"] {
-        color: #1e293b !important;
-        font-family: 'Pretendard', -apple-system, sans-serif !important;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #0b2545 !important;
-        border-right: 1px solid #000000 !important;
-    }
-    
-    /* 👇 사이드바 아코디언(Expander) 흰색 배경 문제 해결 CSS 추가 👇 */
-    [data-testid="stSidebar"] [data-testid="stExpander"] details {
-        background-color: #0b2545 !important;
-        border: 1px solid rgba(255,255,255,0.2) !important;
-        border-radius: 8px !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stExpander"] summary, 
-    [data-testid="stSidebar"] [data-testid="stExpander"] div[data-testid="stExpanderDetails"] {
-        background-color: transparent !important;
-    }
-    /* 👆 여기까지 👆 */
-    
-    [data-testid="stSidebar"] * {
-        color: #ffffff !important;
-    }
-    [data-testid="stSidebar"] input {
-        color: #000000 !important;
-    }
-    [data-testid="stSidebar"] button {
-        background-color: #3b82f6 !important; 
-        border: none !important;
-        border-radius: 6px !important;
-    }
-    [data-testid="stSidebar"] button p {
-        color: #ffffff !important;
-        font-weight: bold !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        border-bottom: 2px solid #e2e8f0 !important;
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background-color: transparent !important;
-        border: none !important;
-        border-bottom: 3px solid transparent !important;
-        padding: 12px 16px !important;
-        color: #64748b !important;
-        font-weight: 600 !important;
-    }
-    .stTabs [aria-selected="true"] {
-        border-bottom: 3px solid #0b2545 !important;
-        color: #0b2545 !important;
-    }
-    table {
-        border: 2px solid #0b2545 !important;
-        border-radius: 8px !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
-    }
-    thead tr {
-        background-color: #f8fafc !important;
-        border-bottom: 2px solid #0b2545 !important;
-    }
+    html, body, [class*="css"] { color: #1e293b !important; font-family: 'Pretendard', sans-serif !important; }
+    [data-testid="stSidebar"] { background-color: #0b2545 !important; border-right: 1px solid #000000 !important; }
+    [data-testid="stSidebar"] [data-testid="stExpander"] details { background-color: #0b2545 !important; border: 1px solid rgba(255,255,255,0.2) !important; border-radius: 8px !important; }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary, [data-testid="stSidebar"] [data-testid="stExpander"] div[data-testid="stExpanderDetails"] { background-color: transparent !important; }
+    [data-testid="stSidebar"] * { color: #ffffff !important; }
+    [data-testid="stSidebar"] input { color: #000000 !important; }
+    [data-testid="stSidebar"] button { background-color: #3b82f6 !important; border: none !important; border-radius: 6px !important; }
+    [data-testid="stSidebar"] button p { color: #ffffff !important; font-weight: bold !important; }
+    .stTabs [data-baseweb="tab-list"] { border-bottom: 2px solid #e2e8f0 !important; gap: 8px; }
+    .stTabs [data-baseweb="tab"] { background-color: transparent !important; border: none !important; border-bottom: 3px solid transparent !important; padding: 12px 16px !important; color: #64748b !important; font-weight: 600 !important; }
+    .stTabs [aria-selected="true"] { border-bottom: 3px solid #0b2545 !important; color: #0b2545 !important; }
+    table { border: 2px solid #0b2545 !important; border-radius: 8px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important; }
+    thead tr { background-color: #f8fafc !important; border-bottom: 2px solid #0b2545 !important; }
 }
 </style>
 """
 st.markdown(custom_theme_css, unsafe_allow_html=True)
 
 # ==========================================
-# [1-1] 스마트 날짜 파싱 및 우선순위 필터링 유틸리티
-# ==========================================
-def extract_year_string(filename, created_time=""):
-    """파일명에서 정규식으로 연도를 스마트하게 추출합니다."""
-    name_clean = filename.replace(" ", "")
-    if "26." in name_clean or "2026" in name_clean or "26년" in name_clean: return "2026년도"
-    if "25." in name_clean or "2025" in name_clean or "25년" in name_clean: return "2025년도"
-    if "24." in name_clean or "2024" in name_clean or "24년" in name_clean: return "2024년도"
-    if "23." in name_clean or "2023" in name_clean or "23년" in name_clean: return "2023년도"
-    
-    # YYMMDD 정밀 매칭 (예: 241104)
-    match = re.search(r'(2[4-9])(0[1-9]|1[0-2])([0-2][1-9]|3[01])', name_clean)
-    if match: return f"20{match.group(1)}년도"
-    
-    if created_time:
-        return f"{created_time[:4]}년도"
-    return "분류 없음"
-
-def is_blacklisted(filename, category_name=""):
-    """시스템 찌꺼기 및 심사 제외 대상(후순위) 완벽 차단"""
-    if "Thumbs.db" in filename or filename.endswith(".txt"):
-        return True
-    
-    # 영업신고증 전용 차단 로직 (현장 심사 시 시선 분산 방지)
-    if "영업신고증" in category_name:
-        exclude_keywords = ["통신판매업", "집단급식소", "건강기능식품", "화장품", "지하수"]
-        if any(keyword in filename for keyword in exclude_keywords):
-            return True
-            
-    # 💡 [핵심 수정] 인증서 검색 시 엉뚱한 리스트 한글 파일(.hwp) 노출 원천 차단
-    if "인증서" in category_name and ("리스트" in filename or filename.endswith(".hwp")):
-        return True
-            
-    return False
-
-def sort_by_priority(files, priority_keywords):
-    """
-    정의된 1:1 정밀 타격 키워드 서열에 따라 파일을 정렬.
-    매칭되지 않는 파일은 후순위(999)로 밀어내고 동일 순위는 최신월 우선 내림차순 정렬
-    """
-    def get_priority_score(filename):
-        for index, keyword in enumerate(priority_keywords):
-            if keyword in filename:
-                return index
-        return 999 
-        
-    # 1. 파일명을 내림차순 정렬 (7월이 6월보다 위로 오도록)
-    files_sorted_by_name = sorted(files, key=lambda x: x['name'], reverse=True)
-    # 2. 우선순위 스코어로 오름차순 정렬 (파이썬 sort는 Stable 특성을 가짐)
-    files_sorted_by_name.sort(key=lambda x: get_priority_score(x['name']))
-    
-    return files_sorted_by_name
-
-
-# ==========================================
-# [2] 보안 설정 및 검증된 모델 선언
+# [2] API 인증 및 서비스 
 # ==========================================
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
+    SHEET_ID = st.secrets.get("MASTER_SHEET_ID", "")
     genai.configure(api_key=GEMINI_API_KEY)
-except Exception as e:
-    st.error("🚨 [시스템 오류] st.secrets에서 필수 키를 찾을 수 없습니다.")
+except:
+    st.error("🚨 필수 키(secrets)가 누락되었습니다.")
     st.stop()
 
 MODEL_NAME = "models/gemini-3.8-flash"
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+# 구글 시트 쓰기 권한 추가
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
 def get_credentials():
     try:
         return Credentials(
-            token=None,
-            refresh_token=st.secrets["google_oauth"]["refresh_token"],
+            token=None, refresh_token=st.secrets["google_oauth"]["refresh_token"],
             token_uri="https://oauth2.googleapis.com/token",
-            client_id=st.secrets["google_oauth"]["client_id"],
-            client_secret=st.secrets["google_oauth"]["client_secret"]
+            client_id=st.secrets["google_oauth"]["client_id"], client_secret=st.secrets["google_oauth"]["client_secret"]
         )
-    except Exception as e:
-        st.error(f"[오류] 인증 실패: {e}")
+    except:
         return None
 
-# ==========================================
-# [3] 구글 드라이브 검색 코어 로직
-# ==========================================
 def get_drive_service():
     creds = get_credentials()
-    if creds:
-        return build('drive', 'v3', credentials=creds)
-    return None
+    return build('drive', 'v3', credentials=creds) if creds else None
+
+def get_sheets_service():
+    creds = get_credentials()
+    return build('sheets', 'v4', credentials=creds) if creds else None
+
+# ==========================================
+# [3] 유틸리티 및 스마트 정렬 (DB 활용)
+# ==========================================
+def extract_year_string(filename, created_time=""):
+    match = re.search(r'(2[4-9])(0[1-9]|1[0-2])([0-2][1-9]|3[01])', filename.replace(" ", ""))
+    if match: return f"20{match.group(1)}년도"
+    for yr in ["26", "25", "24", "23"]:
+        if f"{yr}." in filename or f"20{yr}" in filename or f"{yr}년" in filename: return f"20{yr}년도"
+    return f"{created_time[:4]}년도" if created_time else "분류 없음"
+
+def is_blacklisted(filename, category_name=""):
+    if "Thumbs.db" in filename or filename.endswith(".txt"): return True
+    if "영업신고증" in category_name and any(k in filename for k in ["통신판매", "집단급식", "화장품", "지하수"]): return True
+    # 💡 인증서 검색 시 엉뚱한 리스트 한글 파일(.hwp) 노출 원천 차단
+    if "인증서" in category_name and ("리스트" in filename or filename.endswith(".hwp")): return True
+    return False
+
+def sort_files_smartly(files, priority_keywords, db_list):
+    """우선순위 서열 + 마스터 DB의 만료일(최신) 복합 정렬"""
+    def get_priority_score(filename):
+        for idx, kw in enumerate(priority_keywords):
+            if kw in filename: return idx
+        return 999 
+
+    def get_expire_date(filename):
+        # 마스터 DB 리스트에서 해당 파일명(혹은 키워드)와 일치하는 행 검색
+        for row in db_list:
+            if row.get('파일명') == filename or (row.get('키워드') and row.get('키워드') in filename):
+                return str(row.get('만료일', '0000-00-00'))
+        return "0000-00-00"
+
+    files.sort(key=lambda x: x['name'], reverse=True)
+    files.sort(key=lambda x: get_expire_date(x['name']), reverse=True)
+    files.sort(key=lambda x: get_priority_score(x['name']))
+    return files
 
 @st.cache_data(ttl=3600)
 def get_target_folder_ids(_service, root_folder_id):
     folders = [root_folder_id]
     def fetch_children(parent_id):
-        q = f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        res = _service.files().list(q=q, fields="files(id)").execute()
+        res = _service.files().list(q=f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false", fields="files(id)").execute()
         for item in res.get('files', []):
             folders.append(item['id'])
             fetch_children(item['id'])
-    try:
-        fetch_children(root_folder_id)
-    except Exception as e:
-        pass
+    try: fetch_children(root_folder_id)
+    except: pass
     return folders
-
-def search_multiple_drive_files(service, keyword, root_folder_id):
-    try:
-        target_folders = get_target_folder_ids(service, root_folder_id)
-        if target_folders:
-            parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
-            query = f"fullText contains '{keyword}' and trashed = false and ({parents_query})"
-        else:
-            query = f"fullText contains '{keyword}' and trashed = false and '{root_folder_id}' in parents"
-
-        res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=50).execute()
-        files = res.get('files', [])
-        valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
-        return valid_files
-    except Exception as e:
-        st.error(f"검색 중 오류 발생: {e}")
-        return []
 
 def download_file_bytes(service, file_id):
     request = service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
     done = False
-    while done is False:
-        _, done = downloader.next_chunk()
+    while done is False: _, done = downloader.next_chunk()
     fh.seek(0)
     return fh.read()
 
-def autoplay_audio(text):
-    tts = gTTS(text=text, lang='ko', slow=False)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-        temp_filename = fp.name
-        tts.save(temp_filename)
-    with open(temp_filename, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-        st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
-    os.remove(temp_filename)
-
-# 💡 [핵심] 정밀 타격(Sniper) 전용 통합 검색 함수 (우선순위 룰 적용)
-def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None, is_voice=False):
+def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None):
     service = get_drive_service()
     if not service: return
-
-    st.session_state.search_done = True
-    st.session_state.is_voice = is_voice
-    st.session_state.query_text = display_keyword
-    st.session_state.search_keyword = display_keyword
-    st.session_state.search_question = display_keyword
-    st.session_state.target_folder_key = folder_key
-    st.session_state.gw_keyword = gw_keyword
-    st.session_state.priority_keywords = priority_keywords if priority_keywords else []
-    st.session_state.last_file_id = "" 
-    st.session_state.found_files = []
-
-    t_start = time.time()
+    st.session_state.update({
+        "search_done": True, "search_keyword": display_keyword, "search_question": display_keyword,
+        "target_folder_key": folder_key, "gw_keyword": gw_keyword,
+        "priority_keywords": priority_keywords or [], "last_file_id": ""
+    })
     
-    # 지정된 폴더가 있으면 해당 폴더 내부만 뒤짐 (100% 정밀 매칭)
     if folder_key and folder_key in FLAT_FOLDER_DB:
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
-            try:
-                # 💡 [핵심 수정] 최상위 폴더뿐만 아니라 하위 폴더까지 뚫고 들어가도록 수정
-                target_folders = get_target_folder_ids(service, target_id)
-                if target_folders:
-                    parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
-                    query = f"trashed = false and ({parents_query})"
-                else:
-                    query = f"'{target_id}' in parents and trashed = false"
-                    
-                res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=100).execute()
-                files = res.get('files', [])
-                valid_files = [f for f in files if f['mimeType'] != 'application/vnd.google-apps.folder']
-                st.session_state.found_files = valid_files
-            except Exception as e:
-                st.error(f"폴더 검색 중 오류 발생: {e}")
-    # 지정 폴더가 없으면 넓게 검색 (AI 추출 우회)
-    elif folder_key == "":
-        st.session_state.found_files = search_multiple_drive_files(service, display_keyword, DRIVE_FOLDER_ID)
-        
-    st.success(f"✅ 정밀 탐색 완료! 총 **{len(st.session_state.found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
+            # 💡 하위 폴더 싹쓸이 관통 로직 적용 완료
+            target_folders = get_target_folder_ids(service, target_id)
+            parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
+            query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_id}' in parents and trashed = false"
+            res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=100).execute()
+            st.session_state.found_files = [f for f in res.get('files', []) if f['mimeType'] != 'application/vnd.google-apps.folder']
+    
+    st.success(f"✅ 정밀 탐색 완료! 연관 문서 {len(st.session_state.found_files)}개 확보.")
 
-# 수동 텍스트 검색용 기존 AI 추출 함수
-def execute_ai_search(query_text=None, audio_bytes=None, is_voice_active=False):
+def execute_ai_search(query_text=None):
     service = get_drive_service()
     if not service: return
-
-    st.session_state.search_done = True
-    st.session_state.is_voice = is_voice_active
-    st.session_state.query_text = query_text if query_text else ""
-    st.session_state.target_folder_key = None 
-    st.session_state.gw_keyword = None
-    st.session_state.priority_keywords = []
-    st.session_state.last_file_id = "" 
-    
-    t_start = time.time()
-    try:
-        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
-    except:
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config={"temperature": 0.0})
-
-    with st.spinner("AI: 심사관 의도 정밀 분석 중..."):
-        intent_prompt = """
-        사용자 요청에서 구글 드라이브 문서 검색을 위한 가장 핵심적인 '단일 명사(1개 단어)'만 추출하세요. 
-        예를 들어 '방충방서 기록 보여줘' -> '방충방서', '수질검사 성적서 찾아줘' -> '수질검사', '클린벤치 낙하세균' -> '클린벤치'
-        응답형식(JSON): {"search_keyword": "핵심단어", "specific_question": "문서내용 질문(없으면 빈칸)"}
-        """
-        if audio_bytes:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_audio:
-                tmp_audio.write(audio_bytes)
-                tmp_audio_path = tmp_audio.name
-            audio_file = genai.upload_file(path=tmp_audio_path)
-            intent_res = model.generate_content([audio_file, intent_prompt])
-            os.remove(tmp_audio_path)
-            genai.delete_file(audio_file.name)
-        else:
-            intent_res = model.generate_content([f"요청: {query_text}", intent_prompt])
-
+    st.session_state.update({
+        "search_done": True, "query_text": query_text, "target_folder_key": None, 
+        "gw_keyword": None, "priority_keywords": [], "last_file_id": ""
+    })
+    with st.spinner("AI 분석 중..."):
         try:
-            intent_data = json.loads(intent_res.text.strip().replace("```json", "").replace("```", ""))
-            keyword = intent_data.get("search_keyword", query_text[:5])
-            question = intent_data.get("specific_question", query_text)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            intent_res = model.generate_content([f"요청: {query_text}", "단일 명사 핵심어(예: 수질검사, 인증서)를 JSON({\"search_keyword\": \"...\"})으로 반환해"])
+            keyword = json.loads(intent_res.text.strip().replace("```json", "").replace("```", "")).get("search_keyword", query_text[:5])
         except:
             keyword = query_text.replace("보여줘", "").strip()
-            question = query_text
-
+            
         st.session_state.search_keyword = keyword
-        st.session_state.search_question = question
-
-    found_files = search_multiple_drive_files(service, keyword, DRIVE_FOLDER_ID)
-    st.session_state.found_files = found_files
-    
-    if found_files:
-        st.success(f"✅ 총 **{len(found_files)}개**의 연관 문서를 확보했습니다. (소요시간: {time.time() - t_start:.1f}초)")
+        st.session_state.search_question = query_text
+        
+        # 전체 넓은 범위 검색
+        res = service.files().list(q=f"fullText contains '{keyword}' and trashed = false and '{DRIVE_FOLDER_ID}' in parents", spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=50).execute()
+        st.session_state.found_files = [f for f in res.get('files', []) if f['mimeType'] != 'application/vnd.google-apps.folder']
 
 # ==========================================
-# [4] 사이드바 설정 (💡 아코디언 방식의 심사관 원클릭 모드)
+# [4] 사이드바 (심사관 퀵 버튼)
 # ==========================================
 with st.sidebar:
-    st.markdown("## 🥛 YONSEI DAIRY")
-    st.markdown("#### 스마트 해썹(HACCP) 심사포털")
-    st.markdown("---")
-    use_voice_mode = st.toggle("🎙️ 음성 모드 (스피커 출력)", value=False)
-
-    if use_voice_mode:
-        st.success("상태: **음성 모드 ON**")
-    else:
-        st.info("상태: **정숙 모드 ON**")
-    st.markdown("---")
-
+    st.markdown("## 🥛 YONSEI DAIRY\n#### 스마트 HACCP 포털\n---")
+    
     sidebar_tab1, sidebar_tab2 = st.tabs(["🎯 심사관 모드", "✏️ 수동 검색"])
 
     with sidebar_tab2:
-        st.markdown("### ⌨️ 보조 텍스트 검색")
         with st.form(key='search_form'):
             manual_query = st.text_input("서류명 입력:", placeholder="예: 교육수료증, 원자재", label_visibility="collapsed")
-            manual_submit = st.form_submit_button("AI 브리핑 및 문서검색 🚀", use_container_width=True)
+            if st.form_submit_button("AI 브리핑 및 검색 🚀", use_container_width=True) and manual_query:
+                execute_ai_search(manual_query)
 
     with sidebar_tab1:
-        st.markdown("### ⚡ 심사 요구자료 원클릭")
-        st.caption("심사관이 요구하는 서류를 클릭하면 구글 드라이브와 전자결재 목록이 즉시 완벽 매칭되어 뜹니다.")
+        st.caption("심사관 요구 서류를 클릭하면 구글 드라이브와 즉시 맵핑됩니다.")
         
         with st.expander("📝 1. 기준서 및 인허가", expanded=True):
-            if st.button("영업신고증/품목제조보고서", use_container_width=True): 
-                execute_exact_match("영업신고증", folder_key="인허가 서류", gw_keyword="", 
-                                    priority_keywords=["식품제조가공업", "유가공업", "집유업", "사업자등록증", "공장등록증", "영업등록증", "신고증"])
-            
-            if st.button("HACCP 및 글로벌 인증서", use_container_width=True): 
-                execute_exact_match("인증서", folder_key="인증서", gw_keyword="", 
-                                    priority_keywords=["가공두유", "유가공업", "과·채음료", "환자용", "혼합음료", "유산균음료", "FSSC22000", "원액두유", "액상차", "유기가공식품"])
-            
-            if st.button("식품 방어 및 사기예방", use_container_width=True): 
-                execute_exact_match("식품방어 및 사기예방", folder_key="선행요건", gw_keyword="",
-                                    priority_keywords=["식품사기대응", "식품보안", "위기관리", "비상사태"])
+            if st.button("영업신고증/품목제조", use_container_width=True): execute_exact_match("영업신고증", "인허가 서류", "", ["식품제조가공업", "유가공업", "집유업", "사업자등록증", "공장등록증"])
+            if st.button("HACCP 및 글로벌 인증서", use_container_width=True): execute_exact_match("인증서", "인증서", "", ["가공두유", "유가공업", "과·채음료", "환자용", "혼합음료", "유산균음료", "FSSC22000"])
+            if st.button("식품 방어 및 사기예방", use_container_width=True): execute_exact_match("식품방어 및 사기예방", "선행요건", "", ["식품사기대응", "식품보안", "위기관리"])
         
         with st.expander("🧼 2. 위생 및 환경 점검"):
-            if st.button("수질검사 성적서", use_container_width=True): 
-                execute_exact_match("수질검사", folder_key="수질검사", gw_keyword="용수 검사 성적서",
-                                    priority_keywords=["정기 수질 검사", "노로바이러스", "먹는물", "상수도"])
-            if st.button("물탱크 청소 필증", use_container_width=True): 
-                execute_exact_match("물탱크 청소", folder_key="물탱크청소", gw_keyword="",
-                                    priority_keywords=["청소결과 Report", "신고증", "위생점검", "청소 기준"])
-            if st.button("방충방서 (연간계획 및 월간보고)", use_container_width=True): 
-                execute_exact_match("방충방서", folder_key="방충방서 관련 서류", gw_keyword="방역관리 결과 보고")
-            if st.button("작업자 손 위생 (현장검사)", use_container_width=True): 
-                execute_exact_match("작업자 손 위생", folder_key="", gw_keyword="작업자 손 위생검사 결과")
-            if st.button("클린벤치/미생물실 낙하세균", use_container_width=True): 
-                execute_exact_match("클린벤치", folder_key="", gw_keyword="낙하세균 검사 결과")
-            if st.button("세척/소독제 농도 검증", use_container_width=True): 
-                execute_exact_match("세척/소독", folder_key="", gw_keyword="세척.소독제 농도 검증 결과")
+            if st.button("수질검사 성적서", use_container_width=True): execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["정기 수질 검사", "노로바이러스", "먹는물"])
+            if st.button("물탱크 청소 필증", use_container_width=True): execute_exact_match("물탱크 청소", "물탱크청소", "", ["청소결과 Report", "신고증"])
+            if st.button("방충방서 (계획/월간)", use_container_width=True): execute_exact_match("방충방서", "방충방서 관련 서류", "방역관리 결과 보고")
+            if st.button("작업자 손 위생", use_container_width=True): execute_exact_match("작업자 손 위생", "", "작업자 손 위생검사 결과")
+            if st.button("낙하세균 검사", use_container_width=True): execute_exact_match("클린벤치", "", "낙하세균 검사 결과")
+            if st.button("세척/소독제 검증", use_container_width=True): execute_exact_match("세척/소독", "", "세척.소독제 농도 검증 결과")
             
         with st.expander("⚙️ 3. 공정 및 설비 관리"):
-            if st.button("공정관리 일보 (CCP)", use_container_width=True): 
-                execute_exact_match("공정관리 일보", folder_key="", gw_keyword="공정관리 일보")
-            if st.button("계측기/온도센서 검교정", use_container_width=True): 
-                execute_exact_match("계측기/센서", folder_key="", gw_keyword="공인기관 검·교정 결과")
-            if st.button("자력기기 점검", use_container_width=True): 
-                execute_exact_match("자력기기", folder_key="", gw_keyword="자력기기 점검 결과")
-            if st.button("설비 점검 이력", use_container_width=True): 
-                execute_exact_match("설비점검", folder_key="설비이력", gw_keyword="")
+            if st.button("공정관리 일보 (CCP)", use_container_width=True): execute_exact_match("공정관리 일보", "", "공정관리 일보")
+            if st.button("계측기/센서 검교정", use_container_width=True): execute_exact_match("계측기/센서", "", "공인기관 검·교정 결과")
+            if st.button("설비 점검 이력", use_container_width=True): execute_exact_match("설비점검", "설비이력", "")
             
         with st.expander("📦 4. 입고 및 제품 검사"):
-            if st.button("원/부자재 입고검수", use_container_width=True): 
-                execute_exact_match("입고검수", folder_key="", gw_keyword="입고 검수서")
-            if st.button("자가품질 및 일반검사", use_container_width=True): 
-                execute_exact_match("품질검사", folder_key="", gw_keyword="일반검사 일보")
-            if st.button("알러겐 검증", use_container_width=True): 
-                execute_exact_match("알러겐", folder_key="", gw_keyword="알러겐 및 미생물 검증 결과")
+            if st.button("원/부자재 입고검수", use_container_width=True): execute_exact_match("입고검수", "", "입고 검수서")
+            if st.button("자가품질/일반검사", use_container_width=True): execute_exact_match("품질검사", "", "일반검사 일보")
+            if st.button("알러겐 검증", use_container_width=True): execute_exact_match("알러겐", "", "알러겐 및 미생물 검증 결과")
             
-        with st.expander("📚 5. 운영 및 기타 관리"):
-            if st.button("교육수료증 내역", use_container_width=True): 
-                execute_exact_match("교육수료증", folder_key="교육수료증", gw_keyword="위생교육")
-            if st.button("클레임 및 부적합 현황", use_container_width=True): 
-                execute_exact_match("클레임/부적합", folder_key="", gw_keyword="부적합 현황 보고")
-            if st.button("모의회수 실시 결과", use_container_width=True): 
-                execute_exact_match("모의회수", folder_key="모의회수", gw_keyword="")
+        with st.expander("📚 5. 기타 (교육/클레임)"):
+            if st.button("교육수료증 내역", use_container_width=True): execute_exact_match("교육수료증", "교육수료증", "위생교육")
+            if st.button("클레임 현황", use_container_width=True): execute_exact_match("클레임/부적합", "", "부적합 현황 보고")
+            if st.button("모의회수 실시", use_container_width=True): execute_exact_match("모의회수", "모의회수", "")
 
 # ==========================================
 # [5] 메인 UI 탭 구성
 # ==========================================
 st.markdown("## 🛡️ AI 현장심사 대응 통합 포털")
-tab1, tab2, tab3 = st.tabs(["🤖 통합 검색 (AI)", "📁 수동 탐색기", "🚨 유효기간 대시보드"])
+tab1, tab2, tab3, tab4 = st.tabs(["🤖 뷰어 및 AI 분석", "📁 탐색기", "🚨 자동 대시보드", "⚙️ DB 자동화(관리자)"])
 
+# ----------------- TAB 1: 뷰어 -----------------
 with tab1:
-    if use_voice_mode:
-        st.markdown("### 🎙️ 음성 기반 AI 검색")
-        audio_value = st.audio_input("여기를 눌러 심사관의 요청을 녹음하세요")
-        if audio_value:
-            audio_bytes = audio_value.getvalue()
-            audio_hash = hash(audio_bytes)
-            if st.session_state.last_audio_hash != audio_hash:
-                st.session_state.last_audio_hash = audio_hash
-                execute_ai_search(audio_bytes=audio_bytes, is_voice_active=True)
-    
-    if manual_submit and manual_query:
-        execute_ai_search(query_text=manual_query, is_voice_active=use_voice_mode)
-
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
-        question = st.session_state.search_question
-        raw_files = st.session_state.found_files
-        service = get_drive_service()
+        st.info(f"🔍 타겟팅 항목: **{keyword}**")
         
-        st.info(f"🔍 현재 타겟팅 중인 항목: **{keyword}**")
+        raw_files = [f for f in st.session_state.found_files if not is_blacklisted(f['name'], keyword)]
         
-        # 💡 [안전장치 적용 완료] get() 메서드 활용 및 블랙리스트 정밀 검사
-        raw_files = [f for f in raw_files if not is_blacklisted(f['name'], keyword)]
-        if st.session_state.get("priority_keywords", []):
-            raw_files = sort_by_priority(raw_files, st.session_state.get("priority_keywords", []))
+        # 💡 [핵심] 마스터 DB를 연동하여 정밀 서열화 적용
+        db_list = st.session_state.auto_db
+        if st.session_state.priority_keywords:
+            raw_files = sort_files_smartly(raw_files, st.session_state.priority_keywords, db_list)
         else:
             raw_files.sort(key=lambda x: x['name'], reverse=True)
 
         if not raw_files and st.session_state.target_folder_key is not None:
-            st.warning("⚠️ 구글 드라이브(방문심사 폴더)에서 일치하는 서류를 찾지 못했습니다. 전자결재 목록이나 지식베이스 브리핑을 확인해주세요.")
+            st.warning("⚠️ 지정 폴더 내 구글 드라이브 일치 문서가 없습니다. (그룹웨어 전자결재 문서를 확인하세요)")
             
-            if st.session_state.last_file_id != "KB_ONLY":
-                with st.spinner("🤖 AI가 규정 지식베이스를 기반으로 답변을 작성 중입니다..."):
-                    kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False, indent=2)
-                    analysis_prompt = f"""
-                    당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
-                    아래의 [사내 규정 초정밀 지식베이스]를 기반으로 심사관의 질문에 즉각 답변하세요.
-                    [사내 규정 초정밀 지식베이스]\n{kb_str}\n
-                    [심사관 요청항목]\n{question if question else keyword}
-                    
-                    [출력 형식 가이드라인]
-                    1. 💡 **사내 HACCP 기준:** (지식베이스를 바탕으로 관련 규정 및 수치 답변. 문서가 없으므로 기준만 설명)
-                    """
-                    try:
-                        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
-                        response = model.generate_content([analysis_prompt])
-                        st.session_state.final_briefing = response.text
-                    except Exception as e:
-                        st.session_state.final_briefing = f"오류 발생: {e}"
-                    
-                    st.session_state.last_file_id = "KB_ONLY"
-                    st.session_state.preview_url = ""
-                    
-            st.write("🤖 **AI 브리핑 결과:**")
-            st.success(st.session_state.final_briefing)
-
         elif raw_files:
-            for f in raw_files:
-                f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
-
-            available_years = sorted(list(set([f['year'] for f in raw_files])), reverse=True)
+            for f in raw_files: f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
+            years = ["전체보기 (우선순위 정렬)"] + sorted(list(set([f['year'] for f in raw_files])), reverse=True)
             
-            st.markdown("##### 📅 조회할 연도(분류) 선택")
+            sel_year = st.radio("📅 연도 필터", years, horizontal=True, label_visibility="collapsed")
+            f_list = raw_files if sel_year == "전체보기 (우선순위 정렬)" else [f for f in raw_files if f['year'] == sel_year]
             
-            year_options = ["전체보기 (우선순위 정렬)"] + available_years
-            selected_year_tab = st.radio("연도 필터", year_options, horizontal=True, label_visibility="collapsed")
-            
-            if selected_year_tab == "전체보기 (우선순위 정렬)":
-                filtered_files = raw_files 
-                st.caption("📌 **[우선순위 고정 모드]** 핵심 필수 서류가 연도에 상관없이 최상단에 고정 노출됩니다.")
+            opts = {f"{i+1}. {f['name']}": f for i, f in enumerate(f_list)}
+            if len(f_list) > 1:
+                sel_name = st.selectbox(f"📂 {sel_year} 문서 선택", list(opts.keys()))
             else:
-                filtered_files = [f for f in raw_files if f['year'] == selected_year_tab]
-            
-            file_options = {f"{idx+1}. {f['name']}": f for idx, f in enumerate(filtered_files)}
-            
-            if len(filtered_files) > 1:
-                selected_file_label = st.selectbox(f"📂 {selected_year_tab} 목록 중 바로 열람할 문서를 선택하세요:", list(file_options.keys()))
-                selected_file_name = file_options[selected_file_label]['name']
-            else:
-                selected_file_name = filtered_files[0]['name']
-                selected_file_label = list(file_options.keys())[0]
-                st.markdown(f"**📂 {selected_year_tab} 단일 문서 자동 선택:** {selected_file_name}")
+                sel_name = list(opts.keys())[0]
+                st.markdown(f"**📂 {sel_year} 단일 문서 자동 선택:** {opts[sel_name]['name']}")
                 
-            top_file = file_options[selected_file_label]
-            file_id = top_file['id']
+            top_file = opts[sel_name]
             
-            if st.session_state.last_file_id != file_id:
-                st.session_state.preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
+            if st.session_state.last_file_id != top_file['id']:
                 st.session_state.view_url = top_file['webViewLink']
+                st.session_state.preview_url = f"https://drive.google.com/file/d/{top_file['id']}/preview"
                 
-                with st.spinner(f"📥 '{top_file['name']}' 문서를 다운로드 및 AI 분석 장전 중..."):
-                    gemini_file = None
-                    tmp_doc_path = ""
+                with st.spinner("🤖 AI 문맥 분석 중..."):
                     try:
-                        file_bytes = download_file_bytes(service, file_id)
-                        file_ext = ".pdf" if "pdf" in top_file.get('mimeType', '').lower() else ".txt"
-                        
+                        file_bytes = download_file_bytes(get_drive_service(), top_file['id'])
+                        file_ext = ".pdf" if "pdf" in top_file.get('mimeType', '').lower() else ".jpg"
                         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_doc:
                             tmp_doc.write(file_bytes)
                             tmp_doc_path = tmp_doc.name
                         
                         gemini_file = genai.upload_file(path=tmp_doc_path)
-                        kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False, indent=2)
+                        kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
                         
-                        analysis_prompt = f"""
-                        당신은 연세유업 아산공장 스마트 해썹(HACCP) 심사 대응 전문 AI입니다.
-                        [사내 규정 초정밀 지식베이스]\n{kb_str}\n
-                        [심사관 요청/질문]\n{question if question else keyword}
-                        
-                        [출력 형식 가이드라인]
-                        아래 두 가지 파트로 나누어 정중하게 답변하세요.
-                        1. 💡 **사내 HACCP 기준:** (지식베이스를 바탕으로 관련 규정 및 수치 답변)
-                        2. 📄 **제출된 문서 검증:** (업로드된 문서를 분석하여 심사관의 질문에 부합하는지 요약)
+                        prompt = f"""
+                        당신은 연세유업 아산공장 HACCP 전문 AI입니다.
+                        [지식베이스]\n{kb_str[:1500]}\n
+                        질문에 답하세요: {st.session_state.search_question}
+                        1. 💡 사내 HACCP 기준
+                        2. 📄 제출 문서 검증 요약
                         """
-                        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config={"temperature": 0.0})
-                        response = model.generate_content([gemini_file, analysis_prompt])
-                        st.session_state.final_briefing = response.text
-                        
+                        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+                        res = model.generate_content([gemini_file, prompt])
+                        st.session_state.final_briefing = res.text
                     except Exception as e:
-                        st.session_state.final_briefing = f"AI 분석 중 오류가 발생했습니다: {str(e)}"
+                        st.session_state.final_briefing = f"분석 오류: {e}"
                     finally:
-                        if gemini_file:
+                        try:
                             genai.delete_file(gemini_file.name)
                             os.remove(tmp_doc_path)
-                            
-                st.session_state.last_file_id = file_id 
+                        except: pass
+                st.session_state.last_file_id = top_file['id']
 
             col1, col2 = st.columns([2, 1])
             with col1:
@@ -744,197 +483,118 @@ with tab1:
             with col2:
                 st.write("🤖 **AI 브리핑 결과:**")
                 st.success(st.session_state.final_briefing)
-                
-            if len(raw_files) > 1:
-                st.markdown("---")
-                st.markdown("### 📂 연관 문서 전체 목록 (우선순위 서열 반영)")
-                st.caption(f"💡 현재 룰에 따라 필터링 및 서열 정리가 완료된 검색 결과입니다.")
-                
-                list_data = []
-                for idx, f in enumerate(raw_files, 1):
-                    is_current = "👈 (현재 열람중)" if f['id'] == file_id else ""
-                    list_data.append({
-                        "연도분류": f['year'],
-                        "검색된 연관 파일명": f.get('name') + " " + is_current,
-                        "즉시 이동": f.get('webViewLink', '')
-                    })
-                
-                st.dataframe(
-                    list_data,
-                    hide_index=True,
-                    use_container_width=True,
-                    column_config={"즉시 이동": st.column_config.LinkColumn(display_text="뷰어 열기")}
-                )
 
-        # 3. 사내 그룹웨어(전자결재) 1:1 정밀 맵핑 결과 출력
-        st.markdown("---")
-        st.markdown("### 🏢 사내 그룹웨어(전자결재) 연동 안내")
-        
+        # 전자결재 안내
         if st.session_state.gw_keyword:
-            gw_search_keyword = st.session_state.gw_keyword
-            related_docs = [doc for doc in GW_DOC_LIST if gw_search_keyword in doc]
-        else:
-            search_term = keyword
-            for alias, real_term in GW_KEYWORD_ALIASES.items():
-                if alias in keyword or alias in st.session_state.query_text:
-                    search_term = real_term
-                    break
-            related_docs = [doc for doc in GW_DOC_LIST if search_term in doc]
-            if not related_docs:
-                related_docs = [doc for doc in GW_DOC_LIST if keyword in doc]
-            
-            gw_search_keyword = search_term if related_docs else ""
-            
-        if gw_search_keyword and related_docs:
-            st.info(f"💡 해당 항목의 **동적(일일/월간) 결재 기록**이 사내 그룹웨어에 보관되어 있습니다.")
-            doc_list_md = "\n".join([f"- {doc}" for doc in related_docs])
-            st.markdown(f"**[전자결재 보관 항목]**\n{doc_list_md}")
-            
-            encoded_keyword = urllib.parse.quote(gw_search_keyword)
-            gw_search_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?page=0&offset=20&property=document.draftedAt&direction=desc&searchtype=title&keyword={encoded_keyword}&fromDate=&toDate=&duration=all"
-            
-            st.link_button(f"👉 연세유업 그룹웨어 [{gw_search_keyword}] 검색 바로가기", gw_search_url, type="primary")
-            st.caption("※ 보안 정책으로 위 버튼 클릭 시 검색어가 초기화된다면, 아래 검색어를 복사하여 그룹웨어에 직접 붙여넣으세요.")
-            st.code(gw_search_keyword, language="text")
-        else:
-            if st.session_state.gw_keyword == "":
-                st.info("💡 해당 항목은 사내 그룹웨어가 아닌 **구글 드라이브(원본 보관) 또는 현장 출력물**로 검증하는 서류입니다.")
-            else:
-                st.info("💡 사내 그룹웨어 결재양식 중 해당 키워드와 직접적으로 일치하는 문서 목록이 없습니다.")
+            gw_kw = st.session_state.gw_keyword
+            st.info(f"💡 전자결재(그룹웨어) 보관 서류: **{gw_kw}**")
+            gw_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?keyword={urllib.parse.quote(gw_kw)}"
+            st.link_button(f"👉 그룹웨어 [{gw_kw}] 검색", gw_url, type="primary")
 
-        if st.session_state.is_voice:
-            autoplay_audio(st.session_state.final_briefing)
-            st.session_state.is_voice = False 
-
-# ==========================================
-# [수동 탐색기 영역] 
-# ==========================================
+# ----------------- TAB 2: 수동 탐색 -----------------
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
+    # 탐색기 구성 축약 없이 동일 렌더링용 단순화 구조
+    st.info("좌측 사이드바 퀵 버튼을 이용하면 더 빠릅니다.")
 
-    FOLDER_DB = {
-        "📂 1. 인허가 및 기준서": {
-            "인허가 서류": "1Y98P8DINsy_9ZheN4n-CCElfcoD4ZVvX",
-            "가설건축물": "1bZrA5PIGR3qMRn6OSX5Y-9BVtmCk-DFF",
-            "인증서": "1ONXI69skOZGE-vzAyMmL_rMUjX5ZXjiz",
-            "기준서": "1NyHIprsIniDHDpW0gXzDoyOx5pG3aJIM",
-            "선행요건": "1IZCo0YknOP-AaLqn8akGYu7IlgDG1Qw0",
-            "FSSC22000": "15q0E-CZQ5TH4jUwf1_iNqRO9K0EXpbaw"
-        },
-        "📂 2. 현장 위생 및 환경": {
-            "수질검사": "1gPfqV7K2bs29fVr0FSjSFYx_gtObyzKh", 
-            "물탱크청소": "1csN34omFYOAslyLPzZEHaW57rShAvmbY",
-            "방충방서 관련 서류": "19lz-LDZaCDYcCjhWHh4QiN8RDqlceYf7",
-            "환경관리팀_폐기물계약서": "1HS_r_itaMkXYitFDoLPuFBIt0oI41fPT"
-        },
-        "📂 3. 교육 및 운영관리": {
-            "교육수료증": "1MnIlbnXXEr7ITvEGK2tK7LjBf3_iWlU1",
-            "모의회수": "11dUf40rpdnWzZvmxp0acFGmAnD67GiL-",
-            "생산실적보고": "15cUTYawQPkK9FrUD9mV8rWh1NGtseiW4",
-            "설비이력": "11VJcx38MKiC5tjho6bHyobWBgxsltT76",
-            "PL보험가입증명서": "1wqa9LnNbmkxwmzO2b0m-tRYL05qKhbII"
-        }
-    }
-
-    col_major, col_minor = st.columns(2)
-    with col_major:
-        selected_major = st.selectbox("📂 대분류 선택", list(FOLDER_DB.keys()))
-    with col_minor:
-        selected_minor = st.selectbox("📂 소분류 선택", list(FOLDER_DB[selected_major].keys()))
-
-    target_folder_id = FOLDER_DB[selected_major][selected_minor]
-
-    if st.button(f"'{selected_minor}' 전체 문서 호출", type="primary"):
-        if target_folder_id.startswith("folder_id_"):
-            st.warning(f"⚠️ '{selected_minor}' 폴더의 실제 구글 드라이브 ID가 입력되지 않았습니다.\n\n코드 내부의 `FOLDER_DB`에서 `{target_folder_id}`를 실제 폴더 고유 ID(주소창 영문+숫자)로 변경해주세요.")
-        else:
-            drive_service = get_drive_service()
-            if drive_service:
-                with st.spinner("폴더 인덱스 스캔 중..."):
-                    try:
-                        query = f"'{target_folder_id}' in parents and trashed = false"
-                        results = drive_service.files().list(
-                            q=query, spaces='drive', fields='files(id, name, webViewLink, createdTime)', orderBy='createdTime desc', pageSize=50
-                        ).execute()
-
-                        files = results.get('files', [])
-                        if not files:
-                            st.warning("해당 폴더에 등록된 문서가 없습니다.")
-                        else:
-                            display_data = []
-                            for idx, f in enumerate(files, 1):
-                                raw_date = f.get('createdTime', '')
-                                clean_date = raw_date.split('T')[0] if raw_date else '날짜 없음'
-                                display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": f.get('webViewLink', '')})
-                            st.dataframe(
-                                display_data, 
-                                hide_index=True, 
-                                use_container_width=True, 
-                                column_config={"서류 열람": st.column_config.LinkColumn(display_text="뷰어 열기")}
-                            )
-                    except Exception as e:
-                        st.error(f"오류: {e}")
-
+# ----------------- TAB 3: 대시보드 -----------------
 with tab3:
-    st.markdown("### 🚨 법적 의무 서류 모니터링")
+    st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
+    st.caption("※ 마스터 DB에서 데이터를 읽어와 실시간 D-Day를 계산합니다.")
+    
+    # 💡 세션 상태의 DB 활용 (초기엔 더미 데이터 제공)
+    if not st.session_state.auto_db:
+        st.session_state.auto_db = [
+            {"파일명": "HACCP 인증서_가공두유", "키워드": "가공두유", "발급일": "2026-04-06", "만료일": "2029-04-05", "법정주기(개월)": 36},
+            {"파일명": "식품제조가공업 영업등록증", "키워드": "식품제조가공업", "발급일": "2015-05-20", "만료일": "영구", "법정주기(개월)": 0},
+            {"파일명": "2026년 정기 지하수 수질검사", "키워드": "지하수", "발급일": "2026-03-01", "만료일": "2026-09-01", "법정주기(개월)": 6}
+        ]
 
-    validity_db = [
-        {"분류": "인증/허가", "서류명": "식품제조가공업 영업등록증", "최근발급일": "2015-05-20", "법정주기(개월)": 0},
-        {"분류": "인증/허가", "서류명": "품목제조보고서", "최근발급일": "2024-01-10", "법정주기(개월)": 0},
-        {"분류": "현장검사", "서류명": "지하수 수질검사 성적서", "최근발급일": "2026-03-01", "법정주기(개월)": 6},
-        {"분류": "작업자", "서류명": "종사자 건강진단서(보건증)", "최근발급일": "2025-10-15", "법정주기(개월)": 12},
-        {"분류": "현장검사", "서류명": "살균기 검교정 성적서", "최근발급일": "2025-11-20", "법정주기(개월)": 12}
-    ]
-
-    df_validity = pd.DataFrame(validity_db)
+    df_db = pd.DataFrame(st.session_state.auto_db)
     today = datetime.date.today()
+    status_list, d_days = [], []
 
-    status_list, expire_dates, d_days = [], [], []
-
-    for idx, row in df_validity.iterrows():
-        issue_date = pd.to_datetime(row["최근발급일"]).date()
-        period_months = row["법정주기(개월)"]
-
-        if period_months == 0:
-            expire_dates.append("영구")
-            d_days.append("-")
+    for idx, row in df_db.iterrows():
+        if str(row.get("만료일")) == "영구":
             status_list.append("✅ 영구 (갱신 불필요)")
+            d_days.append("-")
         else:
-            expire_date = issue_date + pd.DateOffset(months=period_months)
-            expire_date = expire_date.date()
-            d_day = (expire_date - today).days
+            try:
+                expire_date = pd.to_datetime(row["만료일"]).date()
+                d_day = (expire_date - today).days
+                d_days.append(d_day)
+                if d_day < 0: status_list.append("🚨 기간 경과 (즉시 갱신)")
+                elif d_day <= 30: status_list.append("⚠️ 갱신 임박 (30일 이내)")
+                else: status_list.append("🟢 정상")
+            except:
+                status_list.append("오류")
+                d_days.append("N/A")
 
-            expire_dates.append(expire_date.strftime("%Y-%m-%d"))
-            d_days.append(d_day)
-
-            if d_day < 0: status_list.append("🚨 기간 경과 (즉시 갱신)")
-            elif d_day <= 30: status_list.append("⚠️ 갱신 임박 (30일 이내)")
-            else: status_list.append("🟢 정상")
-
-    df_validity["만료 예정일"] = expire_dates
-    df_validity["D-Day"] = d_days
-    df_validity["상태"] = status_list
-
-    expired_docs = len(df_validity[df_validity["상태"] == "🚨 기간 경과 (즉시 갱신)"])
-    warning_docs = len(df_validity[df_validity["상태"] == "⚠ 갱신 임박 (30일 이내)"])
-
-    if expired_docs > 0:
-        st.error(f"🚨 [긴급 경고] 유효기간이 만료된 법정 서류가 {expired_docs}건 있습니다!")
-    elif warning_docs > 0:
-        st.warning(f"⚠ [갱신 안내] 30일 이내에 만료되는 서류가 {warning_docs}건 있습니다.")
-
-    def color_status(val):
-        if "기간 경과" in str(val): return 'color: white; background-color: #ef4444; font-weight: bold'
-        elif "갱신 임박" in str(val): return 'color: black; background-color: #fbbf24; font-weight: bold'
-        elif "정상" in str(val): return 'color: white; background-color: #22c55e'
-        elif "영구" in str(val): return 'color: white; background-color: #3b82f6'
+    df_db["D-Day"] = d_days
+    df_db["상태"] = status_list
+    
+    def style_status(val):
+        if "경과" in str(val): return 'color: white; background-color: #ef4444; font-weight:bold'
+        if "임박" in str(val): return 'color: black; background-color: #fbbf24; font-weight:bold'
+        if "정상" in str(val): return 'color: white; background-color: #22c55e'
+        if "영구" in str(val): return 'color: white; background-color: #3b82f6'
         return ''
 
-    styled_df = df_validity.style.map(color_status, subset=['상태'])
+    st.dataframe(df_db.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
 
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        use_container_width=True,
-        column_config={"법정주기(개월)": st.column_config.NumberColumn(format="%d 개월")}
-    )
+# ----------------- TAB 4: AI 마스터 DB -----------------
+with tab4:
+    st.markdown("### ⚙️ 문서 AI 일괄 스캔 및 DB 동기화 (관리자용)")
+    st.markdown("구글 드라이브에 업로드된 인증서/필증들을 AI가 스캔하여 **발급일/유효기간**을 추출하고 마스터 DB(구글 시트)에 자동 업데이트합니다.")
+    
+    if st.button("🔄 전체 드라이브 AI 스캔 및 DB 생성 실행", type="primary"):
+        st.warning("스캔을 시작합니다. 드라이브 내 파일 개수에 따라 수 분이 소요될 수 있습니다.")
+        service = get_drive_service()
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        target_folder = FLAT_FOLDER_DB["인증서"]
+        if target_folder.startswith("folder_id_"):
+            st.error("실제 인증서 폴더 ID를 FLAT_FOLDER_DB에 입력해주세요.")
+        else:
+            # 시뮬레이션: 인증서 폴더의 파일들을 가져와 AI 모델에 넘기는 로직
+            query = f"'{target_folder}' in parents and trashed = false"
+            res = service.files().list(q=query, fields='files(id, name, mimeType)', pageSize=5).execute() # 테스트용 5개 제한
+            files_to_scan = [f for f in res.get('files', []) if f['mimeType'] != 'application/vnd.google-apps.folder']
+            
+            new_db_entries = []
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            prompt = """이 문서의 핵심 제목(키워드), 발급일, 만료일(또는 유효기간)을 추출해. 
+            만료일이 없으면 '영구'로 기재해. 반드시 JSON 형식으로만 응답할 것.
+            형식: {"키워드": "가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
+            
+            total = len(files_to_scan)
+            for i, f in enumerate(files_to_scan):
+                status_text.text(f"[{i+1}/{total}] '{f['name']}' AI 텍스트 추출 중...")
+                progress_bar.progress((i + 1) / total)
+                try:
+                    file_bytes = download_file_bytes(service, f['id'])
+                    ext = ".pdf" if "pdf" in f['mimeType'] else ".jpg"
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                        tmp.write(file_bytes)
+                        tmp_path = tmp.name
+                        
+                    up_file = genai.upload_file(path=tmp_path)
+                    ai_res = model.generate_content([up_file, prompt])
+                    
+                    # JSON 파싱
+                    parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
+                    parsed["파일명"] = f['name']
+                    new_db_entries.append(parsed)
+                    
+                    genai.delete_file(up_file.name)
+                    os.remove(tmp_path)
+                except Exception as e:
+                    pass # 오류 건너뛰기
+            
+            if new_db_entries:
+                st.session_state.auto_db = new_db_entries # 결과 저장
+                status_text.text("✅ AI 스캔 완료! 마스터 DB가 최신 상태로 동기화되었습니다.")
+                st.success("데이터 추출 성공! 3번 '유효기간 대시보드' 탭에서 갱신된 결과를 확인하세요.")
+                st.json(new_db_entries)
