@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 # ==========================================
-# [0] AI 현장심사 대응 지식베이스 (초정밀 팩트 데이터 1~20 통합본 - 축약 없음)
+# [0] AI 현장심사 대응 지식베이스 (초정밀 팩트 데이터 1~20 통합본 - 100% 원본 유지)
 # ==========================================
 KNOWLEDGE_BASE = {
     # 1. 작업장 및 환경 관리 기준 (작업장 관리 기준서)
@@ -227,7 +227,7 @@ st.markdown(custom_theme_css, unsafe_allow_html=True)
 # ==========================================
 # [2] API 인증 및 서비스 
 # ==========================================
-# 💡 [핵심 수정] 주임님 환경에 맞춰 전체 엔진을 최상위 모델인 gemini-3.8-flash로 100% 통일 적용
+# 💡 [핵심] 주임님 환경 최고속 모델 3.8-flash 100% 전면 적용
 MODEL_NAME = "models/gemini-3.8-flash"
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
@@ -293,7 +293,7 @@ def sort_files_smartly(files, priority_keywords, db_list):
 
 @st.cache_data(ttl=3600)
 def get_target_folder_ids(_service, root_folder_id):
-    """지정된 폴더 및 모든 하위 폴더의 ID를 재귀적으로 가져옵니다."""
+    """지정된 폴더 및 모든 하위 폴더의 ID를 재귀적으로 가져옵니다 (페이지네이션 적용)."""
     folders = [root_folder_id]
     def fetch_children(parent_id):
         page_token = None
@@ -331,20 +331,22 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     if folder_key and folder_key in FLAT_FOLDER_DB:
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
-            # 💡 [핵심] 하위 폴더까지 싹쓸이 관통
+            # 하위 폴더 싹쓸이 관통 검색
             target_folders = get_target_folder_ids(service, target_id)
-            parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
-            query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_id}' in parents and trashed = false"
             
             all_files = []
-            page_token = None
-            while True:
-                res = service.files().list(q=query, spaces='drive', fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime)', pageSize=1000, pageToken=page_token).execute()
-                for f in res.get('files', []):
-                    if f['mimeType'] != 'application/vnd.google-apps.folder':
-                        all_files.append(f)
-                page_token = res.get('nextPageToken')
-                if not page_token: break
+            for fid in target_folders:
+                page_token = None
+                while True:
+                    res = service.files().list(
+                        q=f"'{fid}' in parents and trashed = false", spaces='drive', 
+                        fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime)', 
+                        pageSize=1000, pageToken=page_token).execute()
+                    for f in res.get('files', []):
+                        if f['mimeType'] != 'application/vnd.google-apps.folder':
+                            all_files.append(f)
+                    page_token = res.get('nextPageToken')
+                    if not page_token: break
                 
             st.session_state.found_files = all_files
     
@@ -403,8 +405,8 @@ with st.sidebar:
             if st.button("식품 방어 및 사기예방", use_container_width=True): execute_exact_match("식품방어 및 사기예방", "선행요건", "", ["식품사기대응", "식품보안", "위기관리"])
         
         with st.expander("🧼 2. 위생 및 환경 점검"):
-            if st.button("수질검사 성적서", use_container_width=True): execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["정기 수질 검사", "노로바이러스", "먹는물", "상수도"])
-            if st.button("물탱크 청소 필증", use_container_width=True): execute_exact_match("물탱크 청소", "물탱크청소", "", ["청소결과 Report", "신고증", "위생점검", "청소 기준"])
+            if st.button("수질검사 성적서", use_container_width=True): execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["정기 수질 검사", "노로바이러스", "먹는물"])
+            if st.button("물탱크 청소 필증", use_container_width=True): execute_exact_match("물탱크 청소", "물탱크청소", "", ["청소결과 Report", "신고증"])
             if st.button("방충방서 (계획/월간)", use_container_width=True): execute_exact_match("방충방서", "방충방서 관련 서류", "방역관리 결과 보고")
             if st.button("작업자 손 위생", use_container_width=True): execute_exact_match("작업자 손 위생", "", "작업자 손 위생검사 결과")
             if st.button("낙하세균 검사", use_container_width=True): execute_exact_match("클린벤치", "", "낙하세균 검사 결과")
@@ -490,7 +492,7 @@ with tab1:
                         res = model.generate_content([gemini_file, prompt])
                         st.session_state.final_briefing = res.text
                     except Exception as e:
-                        st.session_state.final_briefing = f"⚠️ 분석 오류가 발생했습니다. (API 모델 확인 요망)\n에러 상세: {e}"
+                        st.session_state.final_briefing = f"⚠️ 분석 오류가 발생했습니다. (API 확인 요망)\n에러 상세: {e}"
                     finally:
                         try:
                             genai.delete_file(gemini_file.name)
@@ -519,64 +521,47 @@ with tab1:
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
     
-    FOLDER_DB = {
-        "📂 1. 인허가 및 기준서": {
-            "인허가 서류": "1Y98P8DINsy_9ZheN4n-CCElfcoD4ZVvX",
-            "가설건축물": "1bZrA5PIGR3qMRn6OSX5Y-9BVtmCk-DFF",
-            "인증서": "1ONXI69skOZGE-vzAyMmL_rMUjX5ZXjiz",
-            "기준서": "1NyHIprsIniDHDpW0gXzDoyOx5pG3aJIM",
-            "선행요건": "1IZCo0YknOP-AaLqn8akGYu7IlgDG1Qw0",
-            "FSSC22000": "15q0E-CZQ5TH4jUwf1_iNqRO9K0EXpbaw"
-        },
-        "📂 2. 현장 위생 및 환경": {
-            "수질검사": "1gPfqV7K2bs29fVr0FSjSFYx_gtObyzKh", 
-            "물탱크청소": "1csN34omFYOAslyLPzZEHaW57rShAvmbY",
-            "방충방서 관련 서류": "19lz-LDZaCDYcCjhWHh4QiN8RDqlceYf7",
-            "환경관리팀_폐기물계약서": "1HS_r_itaMkXYitFDoLPuFBIt0oI41fPT"
-        },
-        "📂 3. 교육 및 운영관리": {
-            "교육수료증": "1MnIlbnXXEr7ITvEGK2tK7LjBf3_iWlU1",
-            "모의회수": "11dUf40rpdnWzZvmxp0acFGmAnD67GiL-",
-            "생산실적보고": "15cUTYawQPkK9FrUD9mV8rWh1NGtseiW4",
-            "설비이력": "11VJcx38MKiC5tjho6bHyobWBgxsltT76",
-            "PL보험가입증명서": "1wqa9LnNbmkxwmzO2b0m-tRYL05qKhbII"
-        }
-    }
-
     col_major, col_minor = st.columns(2)
     with col_major:
-        selected_major = st.selectbox("📂 대분류 선택", list(FOLDER_DB.keys()))
-    with col_minor:
-        selected_minor = st.selectbox("📂 소분류 선택", list(FOLDER_DB[selected_major].keys()))
+        selected_major = st.selectbox("📂 대분류 선택", list(FLAT_FOLDER_DB.keys())) # 축약 없이 직접 DB 연동
+    
+    target_folder_id = FLAT_FOLDER_DB[selected_major]
 
-    target_folder_id = FOLDER_DB[selected_major][selected_minor]
-
-    if st.button(f"'{selected_minor}' 전체 문서 호출", type="primary"):
+    if st.button(f"'{selected_major}' 전체 문서 호출", type="primary"):
         if target_folder_id.startswith("folder_id_"):
-            st.warning(f"⚠️ '{selected_minor}' 폴더의 실제 구글 드라이브 ID가 입력되지 않았습니다.")
+            st.warning(f"⚠️ '{selected_major}' 폴더의 실제 구글 드라이브 ID가 입력되지 않았습니다.")
         else:
             drive_service = get_drive_service()
             if drive_service:
                 with st.spinner("폴더 인덱스 스캔 중..."):
                     try:
-                        query = f"'{target_folder_id}' in parents and trashed = false"
-                        results = drive_service.files().list(
-                            q=query, spaces='drive', fields='files(id, name, webViewLink, createdTime)', orderBy='createdTime desc', pageSize=50
-                        ).execute()
+                        # 하위 폴더 관통
+                        t_folders = get_target_folder_ids(drive_service, target_folder_id)
+                        all_disp = []
+                        for fid in t_folders:
+                            pt = None
+                            while True:
+                                results = drive_service.files().list(
+                                    q=f"'{fid}' in parents and trashed = false", spaces='drive', 
+                                    fields='nextPageToken, files(id, name, webViewLink, createdTime, mimeType)', 
+                                    orderBy='createdTime desc', pageSize=1000, pageToken=pt
+                                ).execute()
+                                for f in results.get('files', []):
+                                    if f['mimeType'] != 'application/vnd.google-apps.folder':
+                                        all_disp.append(f)
+                                pt = results.get('nextPageToken')
+                                if not pt: break
 
-                        files = results.get('files', [])
-                        if not files:
+                        if not all_disp:
                             st.warning("해당 폴더에 등록된 문서가 없습니다.")
                         else:
                             display_data = []
-                            for idx, f in enumerate(files, 1):
+                            for idx, f in enumerate(all_disp, 1):
                                 raw_date = f.get('createdTime', '')
                                 clean_date = raw_date.split('T')[0] if raw_date else '날짜 없음'
                                 display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": f.get('webViewLink', '')})
                             st.dataframe(
-                                display_data, 
-                                hide_index=True, 
-                                use_container_width=True, 
+                                display_data, hide_index=True, use_container_width=True, 
                                 column_config={"서류 열람": st.column_config.LinkColumn(display_text="뷰어 열기")}
                             )
                     except Exception as e:
@@ -598,7 +583,6 @@ with tab3:
     today = datetime.date.today()
     status_list, d_days = [], []
     
-    # 💡 필수 서류 누락 체크
     missing_docs = []
     required_keywords = ["가공두유", "영업신고증", "수질검사", "방충방서"]
 
@@ -607,7 +591,7 @@ with tab3:
             missing_docs.append(req_kw)
 
     for idx, row in df_db.iterrows():
-        if str(row.get("만료일")) == "영구":
+        if str(row.get("만료일")) == "영구" or str(row.get("만료일")) == "PASS":
             status_list.append("✅ 영구 (갱신 불필요)")
             d_days.append("-")
         else:
@@ -640,36 +624,50 @@ with tab3:
 # ----------------- TAB 4: AI 마스터 DB -----------------
 with tab4:
     st.markdown("### ⚙️ 문서 AI 일괄 스캔 및 DB 동기화 (관리자용)")
-    st.markdown("구글 드라이브에 업로드된 인증서/필증들을 AI가 스캔하여 **발급일/유효기간**을 추출하고 마스터 DB(구글 시트)에 자동 업데이트합니다.")
+    st.markdown("유효기간 관리가 필요한 지정 폴더들의 문서를 AI가 스캔하여 마스터 DB에 자동 업데이트합니다.")
+    
+    # 💡 [핵심] 스캔 대상 폴더 선택 UI 추가 (불필요한 스캔 원천 차단)
+    default_targets = ["인허가 서류", "인증서", "수질검사", "교육수료증"]
+    selected_targets = st.multiselect(
+        "📌 스캔할 카테고리 선택 (유효기간 관리가 필요한 항목만 선택)",
+        options=list(FLAT_FOLDER_DB.keys()),
+        default=default_targets
+    )
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔍 1단계: 대상 파일 조회 (스캔 전 확인)", type="secondary", use_container_width=True):
-            service = get_drive_service()
-            target_folder = FLAT_FOLDER_DB["인증서"]
-            
-            if target_folder.startswith("folder_id_"):
-                st.error("실제 인증서 폴더 ID를 FLAT_FOLDER_DB에 입력해주세요.")
+            if not selected_targets:
+                st.error("스캔할 카테고리를 하나 이상 선택해주세요.")
             else:
-                target_folders = get_target_folder_ids(service, target_folder)
-                parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
-                query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_folder}' in parents and trashed = false"
-                
+                service = get_drive_service()
                 files_to_scan = []
-                page_token = None
-                while True:
-                    res = service.files().list(q=query, fields='nextPageToken, files(id, name, mimeType)', pageSize=1000, pageToken=page_token).execute()
-                    for f in res.get('files', []):
-                        if f['mimeType'] != 'application/vnd.google-apps.folder':
-                            files_to_scan.append(f)
-                    page_token = res.get('nextPageToken')
-                    if not page_token: break
                 
+                with st.spinner("선택된 폴더 및 하위 폴더의 문서들을 검색 중..."):
+                    for cat in selected_targets:
+                        tf_id = FLAT_FOLDER_DB[cat]
+                        if tf_id.startswith("folder_id_"): continue
+                        
+                        # 💡 [핵심] 각 타겟 카테고리의 모든 하위 폴더 싹쓸이 관통
+                        t_folders = get_target_folder_ids(service, tf_id)
+                        for folder_id in t_folders:
+                            page_token = None
+                            while True:
+                                res = service.files().list(
+                                    q=f"'{folder_id}' in parents and trashed = false", 
+                                    fields='nextPageToken, files(id, name, mimeType)', 
+                                    pageSize=1000, pageToken=page_token).execute()
+                                for f in res.get('files', []):
+                                    if f['mimeType'] != 'application/vnd.google-apps.folder':
+                                        files_to_scan.append(f)
+                                page_token = res.get('nextPageToken')
+                                if not page_token: break
+                    
                 valid_files = [f for f in files_to_scan if "pdf" in f['mimeType'].lower() or "image" in f['mimeType'].lower()]
                 
                 st.info(f"📂 총 **{len(files_to_scan)}개**의 파일이 발견되었습니다.")
                 if len(valid_files) == 0:
-                    st.error("🚨 스캔 가능한 PDF나 이미지 파일이 0개입니다! (hwp, docx 등은 스캔 불가. PDF로 변환해 주세요.)")
+                    st.error("🚨 스캔 가능한 PDF나 이미지 파일이 0개입니다! (hwp, docx 등은 스캔 불가. PDF 변환 요망)")
                 else:
                     st.success(f"✅ 그 중 AI 스캔이 가능한 문서(PDF/이미지)는 **{len(valid_files)}개** 입니다.")
                 st.session_state.files_to_scan = valid_files
@@ -689,8 +687,12 @@ with tab4:
                 new_db_entries = []
                 
                 model = genai.GenerativeModel(MODEL_NAME)
+                
+                # 💡 [핵심] 단순 매뉴얼/일지는 스마트하게 PASS 시키는 프롬프트 추가
                 prompt = """이 문서의 핵심 제목(키워드), 발급일, 만료일(또는 유효기간)을 추출해. 
-                만료일이 없으면 '영구'로 기재해. 반드시 JSON 형식으로만 응답할 것.
+                만료일이 없으면 '영구'로 기재해. 
+                **만약 문서가 매뉴얼, 기준서, 일일 점검표 등 유효기간이나 갱신 주기가 없는 단순 참고용 서류라면 "키워드" 값에 "PASS"라고 적어.**
+                반드시 JSON 형식으로만 응답할 것.
                 형식: {"키워드": "가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
                 
                 total = len(files_to_scan)
@@ -714,13 +716,15 @@ with tab4:
                         ai_res = model.generate_content([up_file, prompt])
                         
                         parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
-                        parsed["파일명"] = f['name']
-                        new_db_entries.append(parsed)
+                        
+                        # PASS 처리된 문서는 DB에서 제외
+                        if parsed.get("키워드") != "PASS":
+                            parsed["파일명"] = f['name']
+                            new_db_entries.append(parsed)
                         
                         genai.delete_file(up_file.name)
                         os.remove(tmp_path)
                     except Exception as e:
-                        # 💡 무음 실패(Silent Failure) 방지를 위해 에러를 기록하고 사용자에게 보여줍니다.
                         error_log.append(f"❌ '{f['name']}' 스캔 실패: {str(e)}")
                 
                 if new_db_entries:
@@ -729,16 +733,13 @@ with tab4:
                     
                     if sheet_service and SHEET_ID:
                         try:
-                            # 1. 기존 데이터 초기화 (A~E열)
                             sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:E").execute()
                             
-                            # 2. 새 데이터 포맷팅
                             headers = ["파일명", "키워드", "발급일", "만료일", "법정주기(개월)"]
                             values = [headers]
                             for row in new_db_entries:
                                 values.append([row.get("파일명",""), row.get("키워드",""), row.get("발급일",""), row.get("만료일",""), "36"]) 
                             
-                            # 3. 새 데이터 쓰기
                             body = {'values': values}
                             sheet_service.spreadsheets().values().update(
                                 spreadsheetId=SHEET_ID, range="DB!A1",
