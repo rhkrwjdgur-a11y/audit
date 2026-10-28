@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 # ==========================================
-# [0] AI 현장심사 대응 지식베이스 (초정밀 팩트 데이터 1~20 통합본 - 100% 원본 유지)
+# [0] AI 현장심사 대응 지식베이스 (초정밀 팩트 데이터 1~20 통합본 - 축약 없음)
 # ==========================================
 KNOWLEDGE_BASE = {
     # 1. 작업장 및 환경 관리 기준 (작업장 관리 기준서)
@@ -200,7 +200,8 @@ if "view_url" not in st.session_state: st.session_state.view_url = ""
 if "preview_url" not in st.session_state: st.session_state.preview_url = ""
 if "target_folder_key" not in st.session_state: st.session_state.target_folder_key = None
 if "gw_keyword" not in st.session_state: st.session_state.gw_keyword = ""
-if "auto_db" not in st.session_state: st.session_state.auto_db = [] # 마스터 DB 로컬 캐시
+if "auto_db" not in st.session_state: st.session_state.auto_db = []
+if "files_to_scan" not in st.session_state: st.session_state.files_to_scan = []
 
 custom_theme_css = """
 <style>
@@ -226,6 +227,10 @@ st.markdown(custom_theme_css, unsafe_allow_html=True)
 # ==========================================
 # [2] API 인증 및 서비스 
 # ==========================================
+# 💡 [핵심 수정] 주임님 환경에 맞춰 전체 엔진을 최상위 모델인 gemini-3.8-flash로 100% 통일 적용
+MODEL_NAME = "models/gemini-3.8-flash"
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
+
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
@@ -234,9 +239,6 @@ try:
 except:
     st.error("🚨 필수 키(secrets)가 누락되었습니다.")
     st.stop()
-
-MODEL_NAME = "models/gemini-3.8-flash"
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
 def get_credentials():
     try:
@@ -273,7 +275,6 @@ def is_blacklisted(filename, category_name=""):
     return False
 
 def sort_files_smartly(files, priority_keywords, db_list):
-    """우선순위 서열 + 마스터 DB의 만료일(최신) 복합 정렬"""
     def get_priority_score(filename):
         for idx, kw in enumerate(priority_keywords):
             if kw in filename: return idx
@@ -292,12 +293,19 @@ def sort_files_smartly(files, priority_keywords, db_list):
 
 @st.cache_data(ttl=3600)
 def get_target_folder_ids(_service, root_folder_id):
+    """지정된 폴더 및 모든 하위 폴더의 ID를 재귀적으로 가져옵니다."""
     folders = [root_folder_id]
     def fetch_children(parent_id):
-        res = _service.files().list(q=f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false", fields="files(id)").execute()
-        for item in res.get('files', []):
-            folders.append(item['id'])
-            fetch_children(item['id'])
+        page_token = None
+        while True:
+            res = _service.files().list(
+                q=f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false", 
+                fields="nextPageToken, files(id)", pageSize=1000, pageToken=page_token).execute()
+            for item in res.get('files', []):
+                folders.append(item['id'])
+                fetch_children(item['id'])
+            page_token = res.get('nextPageToken')
+            if not page_token: break
     try: fetch_children(root_folder_id)
     except: pass
     return folders
@@ -323,11 +331,22 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     if folder_key and folder_key in FLAT_FOLDER_DB:
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
+            # 💡 [핵심] 하위 폴더까지 싹쓸이 관통
             target_folders = get_target_folder_ids(service, target_id)
             parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
             query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_id}' in parents and trashed = false"
-            res = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=100).execute()
-            st.session_state.found_files = [f for f in res.get('files', []) if f['mimeType'] != 'application/vnd.google-apps.folder']
+            
+            all_files = []
+            page_token = None
+            while True:
+                res = service.files().list(q=query, spaces='drive', fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime)', pageSize=1000, pageToken=page_token).execute()
+                for f in res.get('files', []):
+                    if f['mimeType'] != 'application/vnd.google-apps.folder':
+                        all_files.append(f)
+                page_token = res.get('nextPageToken')
+                if not page_token: break
+                
+            st.session_state.found_files = all_files
     
     st.success(f"✅ 정밀 탐색 완료! 연관 문서 {len(st.session_state.found_files)}개 확보.")
 
@@ -340,7 +359,7 @@ def execute_ai_search(query_text=None):
     })
     with st.spinner("AI 분석 중..."):
         try:
-            model = genai.GenerativeModel("gemini-3.8-flash")
+            model = genai.GenerativeModel(MODEL_NAME)
             intent_res = model.generate_content([f"요청: {query_text}", "단일 명사 핵심어(예: 수질검사, 인증서)를 JSON({\"search_keyword\": \"...\"})으로 반환해"])
             keyword = json.loads(intent_res.text.strip().replace("```json", "").replace("```", "")).get("search_keyword", query_text[:5])
         except:
@@ -349,9 +368,17 @@ def execute_ai_search(query_text=None):
         st.session_state.search_keyword = keyword
         st.session_state.search_question = query_text
         
-        # 전체 넓은 범위 검색
-        res = service.files().list(q=f"fullText contains '{keyword}' and trashed = false and '{DRIVE_FOLDER_ID}' in parents", spaces='drive', fields='files(id, name, webViewLink, mimeType, createdTime)', pageSize=50).execute()
-        st.session_state.found_files = [f for f in res.get('files', []) if f['mimeType'] != 'application/vnd.google-apps.folder']
+        all_files = []
+        page_token = None
+        while True:
+            res = service.files().list(q=f"fullText contains '{keyword}' and trashed = false and '{DRIVE_FOLDER_ID}' in parents", spaces='drive', fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime)', pageSize=1000, pageToken=page_token).execute()
+            for f in res.get('files', []):
+                if f['mimeType'] != 'application/vnd.google-apps.folder':
+                    all_files.append(f)
+            page_token = res.get('nextPageToken')
+            if not page_token: break
+            
+        st.session_state.found_files = all_files
 
 # ==========================================
 # [4] 사이드바 (심사관 퀵 버튼)
@@ -376,8 +403,8 @@ with st.sidebar:
             if st.button("식품 방어 및 사기예방", use_container_width=True): execute_exact_match("식품방어 및 사기예방", "선행요건", "", ["식품사기대응", "식품보안", "위기관리"])
         
         with st.expander("🧼 2. 위생 및 환경 점검"):
-            if st.button("수질검사 성적서", use_container_width=True): execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["정기 수질 검사", "노로바이러스", "먹는물"])
-            if st.button("물탱크 청소 필증", use_container_width=True): execute_exact_match("물탱크 청소", "물탱크청소", "", ["청소결과 Report", "신고증"])
+            if st.button("수질검사 성적서", use_container_width=True): execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["정기 수질 검사", "노로바이러스", "먹는물", "상수도"])
+            if st.button("물탱크 청소 필증", use_container_width=True): execute_exact_match("물탱크 청소", "물탱크청소", "", ["청소결과 Report", "신고증", "위생점검", "청소 기준"])
             if st.button("방충방서 (계획/월간)", use_container_width=True): execute_exact_match("방충방서", "방충방서 관련 서류", "방역관리 결과 보고")
             if st.button("작업자 손 위생", use_container_width=True): execute_exact_match("작업자 손 위생", "", "작업자 손 위생검사 결과")
             if st.button("낙하세균 검사", use_container_width=True): execute_exact_match("클린벤치", "", "낙하세균 검사 결과")
@@ -459,11 +486,11 @@ with tab1:
                         1. 💡 사내 HACCP 기준
                         2. 📄 제출 문서 검증 요약
                         """
-                        model = genai.GenerativeModel(model_name="gemini-3.8-flash")
+                        model = genai.GenerativeModel(model_name=MODEL_NAME)
                         res = model.generate_content([gemini_file, prompt])
                         st.session_state.final_briefing = res.text
                     except Exception as e:
-                        st.session_state.final_briefing = f"분석 오류: {e}"
+                        st.session_state.final_briefing = f"⚠️ 분석 오류가 발생했습니다. (API 모델 확인 요망)\n에러 상세: {e}"
                     finally:
                         try:
                             genai.delete_file(gemini_file.name)
@@ -477,7 +504,10 @@ with tab1:
                 st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
             with col2:
                 st.write("🤖 **AI 브리핑 결과:**")
-                st.success(st.session_state.final_briefing)
+                if "오류" in st.session_state.final_briefing:
+                    st.error(st.session_state.final_briefing)
+                else:
+                    st.success(st.session_state.final_briefing)
 
         if st.session_state.gw_keyword:
             gw_kw = st.session_state.gw_keyword
@@ -488,7 +518,69 @@ with tab1:
 # ----------------- TAB 2: 수동 탐색 -----------------
 with tab2:
     st.markdown("### 📁 공장 심사 서류 다이렉트 탐색기")
-    st.info("좌측 사이드바 퀵 버튼을 이용하면 더 빠릅니다.")
+    
+    FOLDER_DB = {
+        "📂 1. 인허가 및 기준서": {
+            "인허가 서류": "1Y98P8DINsy_9ZheN4n-CCElfcoD4ZVvX",
+            "가설건축물": "1bZrA5PIGR3qMRn6OSX5Y-9BVtmCk-DFF",
+            "인증서": "1ONXI69skOZGE-vzAyMmL_rMUjX5ZXjiz",
+            "기준서": "1NyHIprsIniDHDpW0gXzDoyOx5pG3aJIM",
+            "선행요건": "1IZCo0YknOP-AaLqn8akGYu7IlgDG1Qw0",
+            "FSSC22000": "15q0E-CZQ5TH4jUwf1_iNqRO9K0EXpbaw"
+        },
+        "📂 2. 현장 위생 및 환경": {
+            "수질검사": "1gPfqV7K2bs29fVr0FSjSFYx_gtObyzKh", 
+            "물탱크청소": "1csN34omFYOAslyLPzZEHaW57rShAvmbY",
+            "방충방서 관련 서류": "19lz-LDZaCDYcCjhWHh4QiN8RDqlceYf7",
+            "환경관리팀_폐기물계약서": "1HS_r_itaMkXYitFDoLPuFBIt0oI41fPT"
+        },
+        "📂 3. 교육 및 운영관리": {
+            "교육수료증": "1MnIlbnXXEr7ITvEGK2tK7LjBf3_iWlU1",
+            "모의회수": "11dUf40rpdnWzZvmxp0acFGmAnD67GiL-",
+            "생산실적보고": "15cUTYawQPkK9FrUD9mV8rWh1NGtseiW4",
+            "설비이력": "11VJcx38MKiC5tjho6bHyobWBgxsltT76",
+            "PL보험가입증명서": "1wqa9LnNbmkxwmzO2b0m-tRYL05qKhbII"
+        }
+    }
+
+    col_major, col_minor = st.columns(2)
+    with col_major:
+        selected_major = st.selectbox("📂 대분류 선택", list(FOLDER_DB.keys()))
+    with col_minor:
+        selected_minor = st.selectbox("📂 소분류 선택", list(FOLDER_DB[selected_major].keys()))
+
+    target_folder_id = FOLDER_DB[selected_major][selected_minor]
+
+    if st.button(f"'{selected_minor}' 전체 문서 호출", type="primary"):
+        if target_folder_id.startswith("folder_id_"):
+            st.warning(f"⚠️ '{selected_minor}' 폴더의 실제 구글 드라이브 ID가 입력되지 않았습니다.")
+        else:
+            drive_service = get_drive_service()
+            if drive_service:
+                with st.spinner("폴더 인덱스 스캔 중..."):
+                    try:
+                        query = f"'{target_folder_id}' in parents and trashed = false"
+                        results = drive_service.files().list(
+                            q=query, spaces='drive', fields='files(id, name, webViewLink, createdTime)', orderBy='createdTime desc', pageSize=50
+                        ).execute()
+
+                        files = results.get('files', [])
+                        if not files:
+                            st.warning("해당 폴더에 등록된 문서가 없습니다.")
+                        else:
+                            display_data = []
+                            for idx, f in enumerate(files, 1):
+                                raw_date = f.get('createdTime', '')
+                                clean_date = raw_date.split('T')[0] if raw_date else '날짜 없음'
+                                display_data.append({"No": idx, "파일명": f.get('name'), "생성일자": clean_date, "서류 열람": f.get('webViewLink', '')})
+                            st.dataframe(
+                                display_data, 
+                                hide_index=True, 
+                                use_container_width=True, 
+                                column_config={"서류 열람": st.column_config.LinkColumn(display_text="뷰어 열기")}
+                            )
+                    except Exception as e:
+                        st.error(f"오류: {e}")
 
 # ----------------- TAB 3: 대시보드 -----------------
 with tab3:
@@ -505,6 +597,14 @@ with tab3:
     df_db = pd.DataFrame(st.session_state.auto_db)
     today = datetime.date.today()
     status_list, d_days = [], []
+    
+    # 💡 필수 서류 누락 체크
+    missing_docs = []
+    required_keywords = ["가공두유", "영업신고증", "수질검사", "방충방서"]
+
+    for req_kw in required_keywords:
+        if not any(req_kw in str(row.get("키워드", "")) for _, row in df_db.iterrows()):
+            missing_docs.append(req_kw)
 
     for idx, row in df_db.iterrows():
         if str(row.get("만료일")) == "영구":
@@ -533,37 +633,62 @@ with tab3:
         return ''
 
     st.dataframe(df_db.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
+    
+    if missing_docs:
+        st.error(f"🚨 **필수 서류 누락 경고:** 아래 서류가 드라이브에 없거나 스캔되지 않았습니다!\n\n {', '.join(missing_docs)}")
 
 # ----------------- TAB 4: AI 마스터 DB -----------------
 with tab4:
     st.markdown("### ⚙️ 문서 AI 일괄 스캔 및 DB 동기화 (관리자용)")
     st.markdown("구글 드라이브에 업로드된 인증서/필증들을 AI가 스캔하여 **발급일/유효기간**을 추출하고 마스터 DB(구글 시트)에 자동 업데이트합니다.")
     
-    if st.button("🔄 전체 드라이브 AI 스캔 및 DB 생성 실행", type="primary"):
-        st.warning("스캔을 시작합니다. 드라이브 내 파일 개수에 따라 수 분이 소요될 수 있습니다.")
-        service = get_drive_service()
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        target_folder = FLAT_FOLDER_DB["인증서"]
-        if target_folder.startswith("folder_id_"):
-            st.error("실제 인증서 폴더 ID를 FLAT_FOLDER_DB에 입력해주세요.")
-        else:
-            # 💡 [핵심 수정] 하위 폴더 싹쓸이 관통 로직 적용
-            target_folders = get_target_folder_ids(service, target_folder)
-            parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
-            query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_folder}' in parents and trashed = false"
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔍 1단계: 대상 파일 조회 (스캔 전 확인)", type="secondary", use_container_width=True):
+            service = get_drive_service()
+            target_folder = FLAT_FOLDER_DB["인증서"]
             
-            # 테스트용 5개 제한을 풀고 넉넉히 가져옵니다.
-            res = service.files().list(q=query, fields='files(id, name, mimeType)', pageSize=50).execute() 
-            files_to_scan = [f for f in res.get('files', []) if f['mimeType'] != 'application/vnd.google-apps.folder']
-            
-            if not files_to_scan:
-                st.warning("스캔할 문서가 없습니다.")
+            if target_folder.startswith("folder_id_"):
+                st.error("실제 인증서 폴더 ID를 FLAT_FOLDER_DB에 입력해주세요.")
             else:
+                target_folders = get_target_folder_ids(service, target_folder)
+                parents_query = " or ".join([f"'{fid}' in parents" for fid in target_folders])
+                query = f"trashed = false and ({parents_query})" if target_folders else f"'{target_folder}' in parents and trashed = false"
+                
+                files_to_scan = []
+                page_token = None
+                while True:
+                    res = service.files().list(q=query, fields='nextPageToken, files(id, name, mimeType)', pageSize=1000, pageToken=page_token).execute()
+                    for f in res.get('files', []):
+                        if f['mimeType'] != 'application/vnd.google-apps.folder':
+                            files_to_scan.append(f)
+                    page_token = res.get('nextPageToken')
+                    if not page_token: break
+                
+                valid_files = [f for f in files_to_scan if "pdf" in f['mimeType'].lower() or "image" in f['mimeType'].lower()]
+                
+                st.info(f"📂 총 **{len(files_to_scan)}개**의 파일이 발견되었습니다.")
+                if len(valid_files) == 0:
+                    st.error("🚨 스캔 가능한 PDF나 이미지 파일이 0개입니다! (hwp, docx 등은 스캔 불가. PDF로 변환해 주세요.)")
+                else:
+                    st.success(f"✅ 그 중 AI 스캔이 가능한 문서(PDF/이미지)는 **{len(valid_files)}개** 입니다.")
+                st.session_state.files_to_scan = valid_files
+
+    with col2:
+        if st.button("🔄 2단계: 전체 스캔 및 시트 저장 실행", type="primary", use_container_width=True):
+            if "files_to_scan" not in st.session_state or not st.session_state.files_to_scan:
+                st.warning("먼저 '1단계: 대상 파일 조회' 버튼을 눌러주세요.")
+            else:
+                files_to_scan = st.session_state.files_to_scan
+                service = get_drive_service()
+                sheet_service = get_sheets_service()
+                
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                error_log = []
                 new_db_entries = []
-                model = genai.GenerativeModel("gemini-3.8-flash")
+                
+                model = genai.GenerativeModel(MODEL_NAME)
                 prompt = """이 문서의 핵심 제목(키워드), 발급일, 만료일(또는 유효기간)을 추출해. 
                 만료일이 없으면 '영구'로 기재해. 반드시 JSON 형식으로만 응답할 것.
                 형식: {"키워드": "가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
@@ -574,7 +699,13 @@ with tab4:
                     progress_bar.progress((i + 1) / total)
                     try:
                         file_bytes = download_file_bytes(service, f['id'])
-                        ext = ".pdf" if "pdf" in f['mimeType'].lower() else ".jpg"
+                        
+                        mime = f['mimeType'].lower()
+                        if "pdf" in mime: ext = ".pdf"
+                        elif "png" in mime: ext = ".png"
+                        elif "jpeg" in mime or "jpg" in mime: ext = ".jpg"
+                        else: ext = ".txt"
+                        
                         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
                             tmp.write(file_bytes)
                             tmp_path = tmp.name
@@ -589,10 +720,37 @@ with tab4:
                         genai.delete_file(up_file.name)
                         os.remove(tmp_path)
                     except Exception as e:
-                        pass
+                        # 💡 무음 실패(Silent Failure) 방지를 위해 에러를 기록하고 사용자에게 보여줍니다.
+                        error_log.append(f"❌ '{f['name']}' 스캔 실패: {str(e)}")
                 
                 if new_db_entries:
                     st.session_state.auto_db = new_db_entries
-                    status_text.text("✅ AI 스캔 완료! 마스터 DB가 최신 상태로 동기화되었습니다.")
-                    st.success("데이터 추출 성공! 3번 '유효기간 대시보드' 탭에서 갱신된 결과를 확인하세요.")
-                    st.json(new_db_entries)
+                    status_text.text("✅ AI 스캔 완료! 구글 시트 저장 시도 중...")
+                    
+                    if sheet_service and SHEET_ID:
+                        try:
+                            # 1. 기존 데이터 초기화 (A~E열)
+                            sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:E").execute()
+                            
+                            # 2. 새 데이터 포맷팅
+                            headers = ["파일명", "키워드", "발급일", "만료일", "법정주기(개월)"]
+                            values = [headers]
+                            for row in new_db_entries:
+                                values.append([row.get("파일명",""), row.get("키워드",""), row.get("발급일",""), row.get("만료일",""), "36"]) 
+                            
+                            # 3. 새 데이터 쓰기
+                            body = {'values': values}
+                            sheet_service.spreadsheets().values().update(
+                                spreadsheetId=SHEET_ID, range="DB!A1",
+                                valueInputOption="RAW", body=body).execute()
+                                
+                            st.success("🎉 데이터 추출 및 마스터 구글 시트 연동이 완료되었습니다! 3번 탭에서 확인하세요.")
+                        except Exception as e:
+                            st.error(f"⚠️ 데이터 추출은 성공했으나 구글 시트 저장에 실패했습니다. (권한/ID 문제 확인 필요): {e}")
+                    else:
+                        st.warning("⚠️ 구글 시트 ID가 없거나 연동되지 않아 세션(임시)에만 저장되었습니다.")
+                        
+                if error_log:
+                    st.error("⚠️ 일부 문서 스캔 중 오류가 발생했습니다. 로그를 확인하세요.")
+                    with st.expander("에러 상세 로그 보기"):
+                        for err in error_log: st.write(err)
