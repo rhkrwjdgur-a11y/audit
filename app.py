@@ -98,7 +98,7 @@ KNOWLEDGE_BASE = {
     "멸균유CCP1B_우유강화유": "우유, 강화유, 가공유 일부제품의 UHT 한계기준은 멸균온도 135~150℃, 멸균시간 10~14초간입니다. HTST의 경우 72~75℃에서 15초 이상 멸균합니다.",
     "멸균유CCP1B_유크림": "유크림의 살균 한계기준은 92~100℃에서 30초 이상 살균(유량 500 L/hr 이하)하는 것입니다.",
     "멸균유CCP1B_중국조제유": "중국 수출용 조제유(병우유)의 한계기준은 127~130℃에서 15초 이상 살균하는 것입니다.",
-    "멸균유CCP2P_여과": "여과 공정 한계기준은 포장 타입별로 우유류 카톤포장 100Mesh, 병포장 120Mesh, 유크림 80Mesh 여과망을 사용하며, 파손 여부를 확인합니다.",
+    "멸균유CCP2P_여과": "여과 공정 한계기준은 포장 타입별로 우유류 카톤포장 100Mesh, 병포장 120Mesh, 유크림 80Mesh 여과망을 사용하며, 파 파손 여부를 확인합니다.",
 
     # 15. 발효유 제조공정 및 HACCP PLAN (발효유, 농후발효유)
     "발효유배양공정": "배양탱크(6,000L 등)에서 4종의 유산균과 유당분해효소를 접종하여 38~42℃(여름 38℃, 봄/가을 40℃, 겨울 42℃)에서 6~8시간 배양한 후 10℃ 이하(그릭요거트는 30℃)로 냉각합니다.",
@@ -185,6 +185,54 @@ GW_KEYWORD_ALIASES = {
 }
 
 # ==========================================
+# [0-3] 법정주기 및 필수 서류 마스터 리스트 (Top-down 매핑용)
+# ==========================================
+MASTER_DOC_REQUIREMENTS = {
+    "사업자등록": {"표시명": "사업자등록증 (연세유업/생활건강)", "주기": 0},
+    "공장등록": {"표시명": "공장등록증명서", "주기": 0},
+    "건축물대장": {"표시명": "건축물대장", "주기": 0},
+    "식품제조가공업": {"표시명": "식품제조가공업 영업등록증", "주기": 0},
+    "축산물가공업": {"표시명": "축산물가공업(유가공업) 허가증", "주기": 0},
+    "집유업": {"표시명": "집유업 허가증", "주기": 0},
+    "수입식품영업": {"표시명": "수입식품등 수입·판매업 영업등록증", "주기": 0},
+    "식품소분업": {"표시명": "식품소분판매업 영업신고증", "주기": 0},
+    "축산물판매업": {"표시명": "축산물유통전문판매업 신고필증", "주기": 0},
+    "건강기능식품영업": {"표시명": "건강기능식품 영업신고증", "주기": 0},
+    "통신판매업": {"표시명": "통신판매업신고증", "주기": 0},
+    "집단급식소": {"표시명": "집단급식소 설치·운영 신고증", "주기": 0},
+    "화장품책임판매": {"표시명": "화장품책임판매업 등록필증", "주기": 0},
+    "지하수개발허가": {"표시명": "지하수개발·이용허가서", "주기": 60},
+    "HACCP_가공두유": {"표시명": "식약처 HACCP (가공두유)", "주기": 36},
+    "HACCP_원액두유": {"표시명": "식약처 HACCP (원액두유)", "주기": 36},
+    "HACCP_유가공업": {"표시명": "식약처 HACCP (유가공업)", "주기": 36},
+    "HACCP_과채주스": {"표시명": "식약처 HACCP (과채주스)", "주기": 36},
+    "HACCP_과채음료": {"표시명": "식약처 HACCP (과채음료)", "주기": 36},
+    "HACCP_혼합음료": {"표시명": "식약처 HACCP (혼합음료)", "주기": 36},
+    "HACCP_유산균음료": {"표시명": "식약처 HACCP (유산균음료)", "주기": 36},
+    "HACCP_커피": {"표시명": "식약처 HACCP (커피)", "주기": 36},
+    "HACCP_액상차": {"표시명": "식약처 HACCP (액상차)", "주기": 36},
+    "HACCP_환자식": {"표시명": "식약처 HACCP (환자용/당뇨/암환자 등)", "주기": 36},
+    "CHINA_HACCP": {"표시명": "중국 수출용 HACCP 인증서", "주기": 36},
+    "FSSC22000": {"표시명": "FSSC 22000 인증서", "주기": 36},
+    "K-MILK": {"표시명": "국산우유 사용 인증(K-MILK)", "주기": 12},
+    "무항생제": {"표시명": "무항생제축산물 인증서", "주기": 12},
+    "유기가공식품": {"표시명": "유기가공식품 인증서", "주기": 12},
+    "FDA_FFR": {"표시명": "FDA 식품시설등록(FFR)", "주기": 24},
+    "FDA_FCE": {"표시명": "FDA 공장등록(FCE)", "주기": 0},
+    "수질검사_월간": {"표시명": "자체 수질검사 성적서 (월간)", "주기": 1},
+    "수질검사_반기": {"표시명": "공인기관 수질검사 성적서 (반기)", "주기": 6},
+    "수질검사_노로": {"표시명": "노로바이러스 검사 성적서", "주기": 12},
+    "저수조청소": {"표시명": "저수조 청소필증 (상/하반기)", "주기": 6},
+    "방충방서_월간": {"표시명": "방충방서 점검 리포트 (월간)", "주기": 1},
+    "보건증": {"표시명": "종사자 보건증 (대표)", "주기": 12},
+    "법정위생교육": {"표시명": "법정 위생교육 수료증", "주기": 12},
+    "HACCP교육": {"표시명": "HACCP 팀장/정기 교육 수료증", "주기": 12},
+    "가설건축물": {"표시명": "가설건축물 존치기간 연장 필증", "주기": 24},
+    "책임보험": {"표시명": "영업배상책임보험 / PL보험 증권", "주기": 12},
+    "모의회수": {"표시명": "모의회수(추적성) 훈련 결과", "주기": 12}
+}
+
+# ==========================================
 # [1] 시스템 기본 설정 및 상태 초기화
 # ==========================================
 st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", layout="wide")
@@ -227,7 +275,6 @@ st.markdown(custom_theme_css, unsafe_allow_html=True)
 # ==========================================
 # [2] API 인증 및 서비스 
 # ==========================================
-# 💡 [핵심] 주임님 환경 최고속 모델 3.8-flash 100% 전면 적용
 MODEL_NAME = "models/gemini-3.8-flash"
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
@@ -331,7 +378,6 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     if folder_key and folder_key in FLAT_FOLDER_DB:
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
-            # 하위 폴더 싹쓸이 관통 검색
             target_folders = get_target_folder_ids(service, target_id)
             
             all_files = []
@@ -523,7 +569,7 @@ with tab2:
     
     col_major, col_minor = st.columns(2)
     with col_major:
-        selected_major = st.selectbox("📂 대분류 선택", list(FLAT_FOLDER_DB.keys())) # 축약 없이 직접 DB 연동
+        selected_major = st.selectbox("📂 대분류 선택", list(FLAT_FOLDER_DB.keys()))
     
     target_folder_id = FLAT_FOLDER_DB[selected_major]
 
@@ -535,7 +581,6 @@ with tab2:
             if drive_service:
                 with st.spinner("폴더 인덱스 스캔 중..."):
                     try:
-                        # 하위 폴더 관통
                         t_folders = get_target_folder_ids(drive_service, target_folder_id)
                         all_disp = []
                         for fid in t_folders:
@@ -567,66 +612,76 @@ with tab2:
                     except Exception as e:
                         st.error(f"오류: {e}")
 
-# ----------------- TAB 3: 대시보드 -----------------
+# ----------------- TAB 3: 대시보드 (마스터 리스트 탑다운 방식 연동) -----------------
 with tab3:
     st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
-    st.caption("※ 마스터 DB에서 데이터를 읽어와 실시간 D-Day를 계산합니다.")
+    st.caption("※ 마스터 기준표(Top-down)에 따라 전체 필수 서류의 누락 및 갱신 상태를 점검합니다.")
     
-    if not st.session_state.auto_db:
-        st.session_state.auto_db = [
-            {"파일명": "HACCP 인증서_가공두유", "키워드": "가공두유", "발급일": "2026-04-06", "만료일": "2029-04-05", "법정주기(개월)": 36},
-            {"파일명": "식품제조가공업 영업등록증", "키워드": "식품제조가공업", "발급일": "2015-05-20", "만료일": "영구", "법정주기(개월)": 0},
-            {"파일명": "2026년 정기 지하수 수질검사", "키워드": "지하수", "발급일": "2026-03-01", "만료일": "2026-09-01", "법정주기(개월)": 6}
-        ]
-
-    df_db = pd.DataFrame(st.session_state.auto_db)
-    today = datetime.date.today()
-    status_list, d_days = [], []
+    # auto_db를 딕셔너리로 변환 (빠른 검색용)
+    db_dict = {row.get("키워드"): row for row in st.session_state.auto_db if row.get("키워드")}
     
+    dashboard_data = []
     missing_docs = []
-    required_keywords = ["가공두유", "영업신고증", "수질검사", "방충방서"]
-
-    for req_kw in required_keywords:
-        if not any(req_kw in str(row.get("키워드", "")) for _, row in df_db.iterrows()):
-            missing_docs.append(req_kw)
-
-    for idx, row in df_db.iterrows():
-        if str(row.get("만료일")) == "영구" or str(row.get("만료일")) == "PASS":
-            status_list.append("✅ 영구 (갱신 불필요)")
-            d_days.append("-")
+    today = datetime.date.today()
+    
+    for key, meta in MASTER_DOC_REQUIREMENTS.items():
+        row_data = {
+            "구분(키워드)": key,
+            "서류명(마스터)": meta["표시명"],
+            "법정주기(개월)": meta["주기"],
+            "스캔된 파일명": "-",
+            "발급일": "-",
+            "만료일": "-",
+            "D-Day": "-",
+            "상태": "🚨 누락 (파일 없음)"
+        }
+        
+        if key in db_dict:
+            doc = db_dict[key]
+            row_data["스캔된 파일명"] = doc.get("파일명", "")
+            row_data["발급일"] = doc.get("발급일", "")
+            exp_date_str = str(doc.get("만료일", ""))
+            row_data["만료일"] = exp_date_str
+            
+            if exp_date_str == "영구":
+                row_data["D-Day"] = "-"
+                row_data["상태"] = "✅ 영구 (갱신 불필요)"
+            else:
+                try:
+                    expire_date = pd.to_datetime(exp_date_str).date()
+                    d_day = (expire_date - today).days
+                    row_data["D-Day"] = str(d_day)
+                    if d_day < 0: row_data["상태"] = "🚨 기간 경과 (즉시 갱신)"
+                    elif d_day <= 30: row_data["상태"] = "⚠️ 갱신 임박 (30일 이내)"
+                    else: row_data["상태"] = "🟢 정상"
+                except:
+                    row_data["D-Day"] = "N/A"
+                    row_data["상태"] = "오류"
         else:
-            try:
-                expire_date = pd.to_datetime(row["만료일"]).date()
-                d_day = (expire_date - today).days
-                d_days.append(str(d_day)) 
-                if d_day < 0: status_list.append("🚨 기간 경과 (즉시 갱신)")
-                elif d_day <= 30: status_list.append("⚠️ 갱신 임박 (30일 이내)")
-                else: status_list.append("🟢 정상")
-            except:
-                status_list.append("오류")
-                d_days.append("N/A")
+            missing_docs.append(meta["표시명"])
+        
+        dashboard_data.append(row_data)
 
-    df_db["D-Day"] = d_days
-    df_db["상태"] = status_list
+    df_dashboard = pd.DataFrame(dashboard_data)
     
     def style_status(val):
+        if "누락" in str(val): return 'color: white; background-color: #000000; font-weight:bold'
         if "경과" in str(val): return 'color: white; background-color: #ef4444; font-weight:bold'
         if "임박" in str(val): return 'color: black; background-color: #fbbf24; font-weight:bold'
         if "정상" in str(val): return 'color: white; background-color: #22c55e'
         if "영구" in str(val): return 'color: white; background-color: #3b82f6'
         return ''
 
-    st.dataframe(df_db.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
+    st.dataframe(df_dashboard.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
     
     if missing_docs:
-        st.error(f"🚨 **필수 서류 누락 경고:** 아래 서류가 드라이브에 없거나 스캔되지 않았습니다!\n\n {', '.join(missing_docs)}")
+        st.error(f"🚨 **치명적 누락 경고 ({len(missing_docs)}건):** 아래 서류가 드라이브에 없거나 스캔되지 않았습니다!\n\n" + " / ".join(missing_docs))
 
 # ----------------- TAB 4: AI 마스터 DB -----------------
 with tab4:
     st.markdown("### ⚙️ 문서 AI 일괄 스캔 및 DB 동기화 (관리자용)")
     st.markdown("유효기간 관리가 필요한 지정 폴더들의 문서를 AI가 스캔하여 마스터 DB에 자동 업데이트합니다.")
     
-    # 💡 [핵심] 스캔 대상 폴더 선택 UI 추가 (불필요한 스캔 원천 차단)
     default_targets = ["인허가 서류", "인증서", "수질검사", "교육수료증"]
     selected_targets = st.multiselect(
         "📌 스캔할 카테고리 선택 (유효기간 관리가 필요한 항목만 선택)",
@@ -648,7 +703,6 @@ with tab4:
                         tf_id = FLAT_FOLDER_DB[cat]
                         if tf_id.startswith("folder_id_"): continue
                         
-                        # 💡 [핵심] 각 타겟 카테고리의 모든 하위 폴더 싹쓸이 관통
                         t_folders = get_target_folder_ids(service, tf_id)
                         for folder_id in t_folders:
                             page_token = None
@@ -682,76 +736,174 @@ with tab4:
                 sheet_service = get_sheets_service()
                 
                 progress_bar = st.progress(0)
-                status_text = st.empty()
+                
+                # 실시간 로그 박스 세팅
+                log_box = st.empty()
+                log_history = []
+                
+                def update_log(msg):
+                    log_history.append(msg)
+                    display_text = "\n".join(log_history[-15:])
+                    log_box.text_area("📡 실시간 진행 로그 (최근 내역)", display_text, height=300)
+
                 error_log = []
                 new_db_entries = []
+                scan_aborted = False
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
-                # 💡 [핵심] 단순 매뉴얼/일지는 스마트하게 PASS 시키는 프롬프트 추가
-                prompt = """이 문서의 핵심 제목(키워드), 발급일, 만료일(또는 유효기간)을 추출해. 
-                만료일이 없으면 '영구'로 기재해. 
-                **만약 문서가 매뉴얼, 기준서, 일일 점검표 등 유효기간이나 갱신 주기가 없는 단순 참고용 서류라면 "키워드" 값에 "PASS"라고 적어.**
+                # 탑다운 마스터 매핑 및 동적 1개월 계산 프롬프트
+                prompt = """이 문서의 핵심 제목, 발급일, 만료일(유효기간)을 추출해.
+                
+                [중요: 마스터 키워드 맵핑 규칙]
+                반드시 아래 정해진 키워드 중 가장 일치하는 1개로 변환해서 "키워드" 값에 넣어.
+                - 사업자등록증 -> "사업자등록"
+                - 공장등록증명서 -> "공장등록"
+                - 건축물대장 -> "건축물대장"
+                - 식품제조가공업 관련 영업증 -> "식품제조가공업"
+                - 축산물가공업/유가공업 허가증 -> "축산물가공업"
+                - 집유업 허가증 -> "집유업"
+                - 수입식품 영업 관련 -> "수입식품영업"
+                - 식품소분판매업 -> "식품소분업"
+                - 축산물유통전문판매업 -> "축산물판매업"
+                - 건강기능식품 영업 -> "건강기능식품영업"
+                - 통신판매업 -> "통신판매업"
+                - 집단급식소 관련 -> "집단급식소"
+                - 화장품책임판매업 -> "화장품책임판매"
+                - 지하수개발 이용허가서 -> "지하수개발허가"
+                - 중국 수출용/CHINA/중문 HACCP -> "CHINA_HACCP"
+                - 식약처 HACCP (가공두유) -> "HACCP_가공두유"
+                - 식약처 HACCP (원액두유) -> "HACCP_원액두유"
+                - 식약처 HACCP (유가공업) -> "HACCP_유가공업"
+                - 식약처 HACCP (과채주스) -> "HACCP_과채주스"
+                - 식약처 HACCP (과채음료) -> "HACCP_과채음료"
+                - 식약처 HACCP (혼합음료) -> "HACCP_혼합음료"
+                - 식약처 HACCP (유산균음료) -> "HACCP_유산균음료"
+                - 식약처 HACCP (커피) -> "HACCP_커피"
+                - 식약처 HACCP (액상차) -> "HACCP_액상차"
+                - 식약처 HACCP (일반환자용/당뇨/암환자 등) -> "HACCP_환자식"
+                - FSSC 22000 -> "FSSC22000"
+                - K-MILK 인증서 -> "K-MILK"
+                - 무항생제 인증서 -> "무항생제"
+                - 유기가공식품 인증서 -> "유기가공식품"
+                - FDA 식품시설등록(FFR) -> "FDA_FFR"
+                - FDA 공장등록(FCE) -> "FDA_FCE"
+                - 노로바이러스 검사 -> "수질검사_노로"
+                - 정기 수질검사(반기) -> "수질검사_반기"
+                - 먹는물 등 월간 수질검사 -> "수질검사_월간"
+                - 저수조 청소 필증/결과 -> "저수조청소"
+                - 방충방서 점검 리포트 -> "방충방서_월간"
+                - 가설건축물 관련 -> "가설건축물"
+                - 보건증/건강진단결과서 -> "보건증"
+                - 법정 위생교육 수료증 -> "법정위생교육"
+                - HACCP 관련 교육 수료증 -> "HACCP교육"
+                - 보험 증권(영업배상/PL) -> "책임보험"
+                - 모의회수(추적성) 계획/결과 -> "모의회수"
+                
+                만료일이 안 적혀 있어도 '수질검사_월간', '방충방서_월간'처럼 주기가 명확한 서류는 발급일 기준으로 1개월 뒤를 만료일로 자동 계산해서 적어. 
+                만료일이 아예 없는 영구 서류는 '영구'로 기재해. 
+                유효기간이나 갱신 주기가 없는 단순 매뉴얼, 기준서만 "키워드"에 "PASS"라고 적어.
+                
                 반드시 JSON 형식으로만 응답할 것.
-                형식: {"키워드": "가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
+                형식: {"키워드": "HACCP_가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
                 
-                total = len(files_to_scan)
-                for i, f in enumerate(files_to_scan):
-                    status_text.text(f"[{i+1}/{total}] '{f['name']}' AI 텍스트 추출 중...")
-                    progress_bar.progress((i + 1) / total)
-                    try:
-                        file_bytes = download_file_bytes(service, f['id'])
-                        
-                        mime = f['mimeType'].lower()
-                        if "pdf" in mime: ext = ".pdf"
-                        elif "png" in mime: ext = ".png"
-                        elif "jpeg" in mime or "jpg" in mime: ext = ".jpg"
-                        else: ext = ".txt"
-                        
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                            tmp.write(file_bytes)
-                            tmp_path = tmp.name
-                            
-                        up_file = genai.upload_file(path=tmp_path)
-                        ai_res = model.generate_content([up_file, prompt])
-                        
-                        parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
-                        
-                        # PASS 처리된 문서는 DB에서 제외
-                        if parsed.get("키워드") != "PASS":
-                            parsed["파일명"] = f['name']
-                            new_db_entries.append(parsed)
-                        
-                        genai.delete_file(up_file.name)
-                        os.remove(tmp_path)
-                    except Exception as e:
-                        error_log.append(f"❌ '{f['name']}' 스캔 실패: {str(e)}")
-                
-                if new_db_entries:
-                    st.session_state.auto_db = new_db_entries
-                    status_text.text("✅ AI 스캔 완료! 구글 시트 저장 시도 중...")
-                    
-                    if sheet_service and SHEET_ID:
+                try:
+                    total = len(files_to_scan)
+                    for i, f in enumerate(files_to_scan):
+                        update_log(f"⏳ [{i+1}/{total}] 문서 다운로드 및 분석 중: {f['name']}")
+                        progress_bar.progress((i + 1) / total)
                         try:
-                            sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:E").execute()
+                            file_bytes = download_file_bytes(service, f['id'])
                             
-                            headers = ["파일명", "키워드", "발급일", "만료일", "법정주기(개월)"]
-                            values = [headers]
-                            for row in new_db_entries:
-                                values.append([row.get("파일명",""), row.get("키워드",""), row.get("발급일",""), row.get("만료일",""), "36"]) 
+                            mime = f['mimeType'].lower()
+                            if "pdf" in mime: ext = ".pdf"
+                            elif "png" in mime: ext = ".png"
+                            elif "jpeg" in mime or "jpg" in mime: ext = ".jpg"
+                            else: ext = ".txt"
                             
-                            body = {'values': values}
-                            sheet_service.spreadsheets().values().update(
-                                spreadsheetId=SHEET_ID, range="DB!A1",
-                                valueInputOption="RAW", body=body).execute()
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                                tmp.write(file_bytes)
+                                tmp_path = tmp.name
                                 
-                            st.success("🎉 데이터 추출 및 마스터 구글 시트 연동이 완료되었습니다! 3번 탭에서 확인하세요.")
+                            up_file = genai.upload_file(path=tmp_path)
+                            ai_res = model.generate_content([up_file, prompt])
+                            
+                            parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
+                            
+                            if parsed.get("키워드") != "PASS":
+                                parsed["파일명"] = f['name']
+                                new_db_entries.append(parsed)
+                                update_log(f"✅ [{i+1}/{total}] 추출 성공! 키워드: {parsed.get('키워드')}")
+                            else:
+                                update_log(f"⏭️ [{i+1}/{total}] 유효기간 없는 서류(PASS) 분류됨")
+                            
+                            genai.delete_file(up_file.name)
+                            os.remove(tmp_path)
                         except Exception as e:
-                            st.error(f"⚠️ 데이터 추출은 성공했으나 구글 시트 저장에 실패했습니다. (권한/ID 문제 확인 필요): {e}")
-                    else:
-                        st.warning("⚠️ 구글 시트 ID가 없거나 연동되지 않아 세션(임시)에만 저장되었습니다.")
+                            update_log(f"❌ [{i+1}/{total}] 개별 파일 스캔 실패: {str(e)}")
+                            error_log.append(f"❌ '{f['name']}' 스캔 실패: {str(e)}")
+                except Exception as critical_err:
+                    update_log(f"🚨 [치명적 오류] 스캔이 중간에 중단되었습니다: {str(critical_err)}")
+                    st.error(f"⚠️ 시스템 오류로 전체 스캔이 멈췄습니다. (완료된 부분까지만 시트 저장을 시도합니다.)")
+                    scan_aborted = True
+                finally:
+                    if new_db_entries:
+                        # 스마트 중복 제거 (가장 최신 만료일 하나만 남기기)
+                        latest_db_dict = {}
+                        for entry in new_db_entries:
+                            kw = entry.get("키워드", "")
+                            if kw == "PASS" or kw not in MASTER_DOC_REQUIREMENTS: 
+                                continue
+                            
+                            exp_str = str(entry.get("만료일", ""))
+                            if exp_str == "영구": 
+                                sort_date = "9999-12-31" 
+                            else:
+                                sort_date = exp_str
+                            
+                            if kw not in latest_db_dict:
+                                latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
+                            else:
+                                if sort_date > latest_db_dict[kw]["sort_date"]:
+                                    latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
+
+                        filtered_db_entries = [v["entry"] for v in latest_db_dict.values()]
+                        st.session_state.auto_db = filtered_db_entries
                         
-                if error_log:
-                    st.error("⚠️ 일부 문서 스캔 중 오류가 발생했습니다. 로그를 확인하세요.")
-                    with st.expander("에러 상세 로그 보기"):
-                        for err in error_log: st.write(err)
+                        if scan_aborted:
+                            update_log("💾 중단점까지 정리된 최신 데이터를 구글 시트에 강제 저장합니다...")
+                        else:
+                            update_log("🎉 모든 분석 완료! 중복을 제거한 최신 데이터를 구글 시트에 저장합니다...")
+                        
+                        if sheet_service and SHEET_ID:
+                            try:
+                                sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:E").execute()
+                                
+                                headers = ["파일명", "키워드", "발급일", "만료일", "법정주기(개월)"]
+                                values = [headers]
+                                
+                                for row in filtered_db_entries:
+                                    kw = row.get("키워드", "")
+                                    cycle = str(MASTER_DOC_REQUIREMENTS.get(kw, {}).get("주기", 0))
+                                    values.append([row.get("파일명",""), kw, row.get("발급일",""), row.get("만료일",""), cycle]) 
+                                
+                                body = {'values': values}
+                                sheet_service.spreadsheets().values().update(
+                                    spreadsheetId=SHEET_ID, range="DB!A1",
+                                    valueInputOption="RAW", body=body).execute()
+                                    
+                                if scan_aborted:
+                                    st.warning("⚠️ 스캔은 중간에 멈췄지만, 방금 전까지 추출된 '최신' 데이터는 마스터 구글 시트에 안전하게 저장되었습니다!")
+                                else:
+                                    st.success(f"🎉 중복 제거 완료! 총 {len(filtered_db_entries)}개의 최신 데이터만 구글 시트 연동이 완료되었습니다! 3번 탭에서 확인하세요.")
+                                update_log(f"✅ 구글 시트 기록 완료! (최종 {len(filtered_db_entries)}개 저장됨)")
+                            except Exception as e:
+                                st.error(f"⚠️ 구글 시트 저장 실패 (권한/ID 문제 확인 필요): {e}")
+                                update_log(f"❌ 시트 저장 실패: {e}")
+                        else:
+                            st.warning("⚠️ 구글 시트 ID가 없거나 연동되지 않아 세션(임시 메모리)에만 저장되었습니다.")
+                            
+                    if error_log:
+                        st.error(f"⚠️ {len(error_log)}개의 문서 스캔 중 오류가 발생했습니다. 아래에서 확인하세요.")
+                        with st.expander("에러 상세 로그 보기"):
+                            for err in error_log: st.write(err)
