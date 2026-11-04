@@ -35,74 +35,51 @@ CACHE_META_FILE = "haccp_agent_cache.json"
 # [0-0] AI 현장심사 대응 지식베이스 (범용 매트릭스 교차검증 팩트 주입)
 # ==========================================
 KNOWLEDGE_BASE = {
-    # 💡 [다중 에이전트 핵심 판단 기준] 우리 공장의 전체 인증 팩트 및 예외 매핑
-    "공장현재인증현황": """[아산공장 전체 HACCP 인증 보유 현황 및 매핑 팩트]
-    1. 우리 공장은 유가공업(우유, 발효유 등)뿐만 아니라 식품제조가공업(가공두유, 원액두유, 음료 등)에 대한 다수의 HACCP 인증을 이미 완비하고 정상 가동 중임. (지식베이스 13~19번 항목의 공정들은 모두 기인증 팩트임).
-    2. 따라서 원액두유, 가공두유, 과채음료 등 지식베이스에 제조공정(CCP)이 명시된 품목은 이미 인증을 보유하고 있으므로 '신규 인증을 받아야 한다'고 오답을 내지 말 것.
-    3. 🚨 단, [유가공업 매핑 주의사항]: 유제품 중 '살균' 공정(CCP-1B 살균)에는 '일반우유/가공유/유크림'만 매핑되어 있으며, '유당분해우유'는 오직 '멸균' 공정에만 매핑되어 있음. 따라서 '살균 라인에서 유당분해우유를 생산할 때'에 한정하여 신규/변경 인증이 필요함.""",
-
-    # 1. 작업장 및 환경 관리 기준 (작업장 관리 기준서)
+    # 💡 [핵심 업데이트] 특정 품목을 하드코딩하지 않고, 객관적 팩트 매핑으로 정규화
+    "공장현재인증현황": """[아산공장 전체 HACCP 인증 보유 현황]
+    1. 유가공업(우유, 발효유 등) 및 식품제조가공업(가공두유, 원액두유, 음료 등) 등 다수의 품목별 HACCP 인증을 보유 중임.
+    2. [기인증 공정 범위 팩트]:
+       - 원액두유/가공두유/과채음료 등: 살균 및 무균 포장(포장지 멸균) 공정까지 전체 라인 인증 완료.
+       - 유제품 살균 라인(CCP-1B 살균): 일반우유, 가공유, 유크림 품목에 한정하여 인증됨. (유당분해우유는 살균 라인 인증 없음)
+       - 유제품 멸균 라인(CCP-1B 멸균): 유당분해우유 포함 멸균 제품군 전체 인증됨.""",
+       
     "조도기준": "조도 측정은 바닥에서 80cm 높이에서 분기별 1회 실시합니다. 기준치는 검사실/계량실 540 Lux 이상, 제조실/포장실 220 Lux 이상, 창고 및 냉장고 등 기타 구역은 110 Lux 이상입니다.",
     "온습도기준": "작업장 온습도는 월 1회 측정합니다. 청결구역 온도는 15~35℃, 준청결구역 1~40℃, 일반구역 1~35℃이며, 모든 구역의 습도 기준은 0~70% 이하로 관리됩니다.",
     "방충방서": "해충 모니터링은 주간 포획량에 따라 3단계로 관리됩니다. 청결구역 기준 비래해충(파리/나방 등)은 1단계 6마리, 2단계 10마리, 3단계 20마리이며, 3단계 이탈 시 배수로 청소 등 2단계 이탈 조치를 실행합니다. 방역은 월 2회 이상 실시합니다.",
     "식품보안": "식품보안 위험성 평가는 심각성과 발생가능성 점수의 합이 4 이상일 때 중요관리점(CCP)으로 지정합니다. 저수조, 화학제, 원료창고 등 주요 보안 구역은 1일 1회 순회 점검 및 CCTV 관찰, 시건장치 점검을 실시합니다.",
-    
-    # 2. 개인 위생 및 복장 규정 (위생 관리 기준서)
     "작업자건강": "액상 유출(상처) 사고 발생 시 부문장 보고 후 방수 밴드를 착용하고 식품 직접 접촉 업무에서 배제합니다. 설사, 구토 등 식중독 의심 환자는 완치(48시간 이상 무증상) 시까지 작업장 출입이 통제됩니다.",
     "복장기준": "기본 복장은 구역에 따라 청결구역은 위생작업복, 준청결구역은 위생가운, 정비작업 시에는 정비작업복을 착용합니다. 작업장 온도에 따라 하절기 반팔/조끼, 동절기 점퍼 등의 추가 복장이 허용됩니다.",
     "위생소독": "손 소독은 70% 알코올을 사용하며, 위생화 소독은 포미(살균소독제)를 물과 250배(200ppm) 희석한 발판 소독조에서 실시합니다.",
     "전자기기": "휴대폰은 원칙적으로 현장 반입 금지이나, 허가된 당직자/공정관리자 등은 사무실 내에서 사용 가능합니다. 현장 내 업무용/소통용 테블릿 및 LTE 무전기는 상시 알코올 소독 조건으로 반입이 허용됩니다.",
-    
-    # 3. 장갑 관리 기준 (장갑 관리 기준서)
     "장갑구분": "식품 접촉/청소 구역에 따라 장갑을 엄격히 구분합니다. 세척/소독 시에는 적색/노란색 고무장갑을 사용하며, 원자재 투입 시에는 라텍스/니트릴(흰색) 고무장갑을 사용합니다. 설비 정비 시에는 반코팅 목장갑을 사용하며, 부자재 투입 시에는 면장갑을 착용한 후 1회 사용 뒤 정비용으로 재활용합니다.",
     "장갑위생": "장갑을 맨손으로 사용할 경우 사용 전 70% 알코올로 소독해야 합니다. 사용 후 청소용 고무장갑은 세척 후 자외선 살균소독기나 건조대에 보관하며, 원자재 투입용 장갑은 중성세제와 70% 알코올로 세척/소독하여 보관합니다.",
-    
-    # 4. 이물 관리 기준 (이물 관리 기준서)
     "이물예방": "유리, 플라스틱, 목재, 금속 등 이물질 혼입을 방지하기 위해 스냅형 칼(커터칼), 스테이플러, 압정, 핀, 클립, 철수세미의 작업장 반입을 전면 금지합니다. 유리 제품은 가능한 다른 재질로 대체하거나 보호 처리해야 합니다. 테이프는 포장실 등 지정된 장소에서만 사용 가능합니다.",
     "이물발생조치": "생산 중 이물 발견 시 즉시 생산을 중단하고 과(팀)장에게 보고합니다. 이물 및 선별된 원료는 격리 보관하며, 원인 분석 후 '부적합보고서' 또는 '시정조치요구대책서'를 발행하여 개선합니다.",
     "이물보관": "소비자로부터 클레임 접수된 이물 신고 내용은 2년간 보관합니다. 소비자가 제시한 이물 실물과 증거품(사진 등)은 6개월간 보관하는 것이 원칙이나, 부패·변질 우려가 있는 경우 2개월간 보관할 수 있습니다.",
     "칼가위관리": "생산 구역에서 사용되는 칼과 가위는 회사가 지급, 식별, 등록한(번호 부여) 물품만 사용해야 합니다. 개인 사물함이나 칼집에 보관해서는 안 되며 임시 보관만 가능합니다. 시작 및 종료 시 상태 점검을 실시해야 합니다.",
-    
-    # 5. 알러겐 관리 기준 (알러겐 관리 기준서)
     "알러겐분류": "알러겐 함유 원료(우유, 대두, 땅콩, 호두, 토마토, 밀 등)는 자재 창고에서부터 별도 구분 및 식별(색상 라벨링)하여 보관합니다.",
     "알러겐취급": "알러겐 원·부자재의 계량, 배합에 사용되는 작업 도구는 전용으로 구분하고 식별 표시를 부착하여 교차오염을 방지합니다.",
     "알러겐검증": "CIP 후 알러겐 물질 잔류 여부는 연 1회 이상 검증(Reveal 3D 등 키트 활용)하며, 양성 판정 시 CIP 효과성 증대 방안을 검토합니다.",
-    
-    # 6. 냉동원료 해동 기준 (냉동원료의 해동 기준서)
     "해동장소": "냉동원료는 냉장 창고, 원자재 보관 창고, 작업장 내 임시 보관 공간에서 선반이나 파레트 위에 포장을 유지한 채 해동해야 정석이며, 야외나 비위생적 공간에서의 해동은 금지됩니다.",
     "해동온도및시간": "해동은 냉장 조건(0~10℃)에서 14일 이내, 실온 조건(1~35℃)에서 2일 이내에 완료되어야 합니다.",
     "해동후관리": "해동 중인 원료는 시작/종료 시간 및 온도 조건이 기록된 명찰을 부착하여 관리해야 하며, 해동이 완료된 원료는 즉시 냉장 보관하고 최단 시간 내에 사용해야 합니다.",
-    
-    # 7. 검사 및 교정 관리 (검사 관리 기준서)
     "기기검교정": "온도계 및 비중계의 사내 교정 주기는 1회/6개월이며, 외부 공인 검사는 1회/년 실시합니다. 저울의 사내 교정은 1회/6개월, 공인 검사는 1회/2년입니다.",
     "병원성미생물검사": "중국 수출용 우유 및 원부자재는 황색포도상구균, 살모넬라 등 병원성 미생물에 대해 PCR(중합효소연쇄반응) 분석을 실시합니다.",
     "검사자숙련도": "미생물, 산도, 조지방 등의 검사자는 연 1회 이상 내부 숙련도 평가를 받으며, 평가 결과 '불만족' 시 재교육 및 재평가를 통과할 때까지 해당 검사에서 배제됩니다.",
-    
-    # 8. 제조시설 세척/소독 및 CIP 기준 (위생 및 제조시설 관리 기준서)
     "CIP세제온도": "라인별 CIP 세제(가성소다, 질산) 온도는 우유가공/발효유 45~70℃, 포장 65~75℃, 상온제품 70~80℃, 원유이송차량 45~65℃입니다. 열수 살균 온도는 95~100℃(상온제품은 125℃ 이상)로 관리됩니다.",
     "CIP검증": "CIP 완료 후에는 pH Paper를 이용하여 세제 잔류 검사를 100% 실시하며, 세척 효과성 검증은 연 1회 주기로 유기물(알러겐 키트) 및 무기물(필터링 육안 점검) 검사를 실시합니다.",
     "수세미구분": "제조 설비(식품 접촉면) 청소용 수세미와 작업장 바닥 청소용 수세미는 색상을 엄격히 구분하여 보관 및 관리합니다.",
-    
-    # 9. 설비 점검 및 폐기 (제조시설 관리 기준서)
     "설비시운전": "신규 설비 도입 시 시운전은 3단계로 진행됩니다. 1단계(전기/유압 작동 확인), 2단계(연속 사이클 부대설비 연계), 3단계(생산 제품 적합성 확인)를 거쳐 승인됩니다.",
     "설비폐기": "노후 설비 폐기는 부문장이 설비폐기 품의서를 작성하고, 총무부문장, 생산본부장 및 사장의 검토를 거쳐 최종적으로 법인본부장의 승인을 득한 후 폐기합니다.",
-    
-    # 10. 용수 관리 기준 (용수관리 기준서)
     "수질검사": "제품수(음용수) 및 지하수는 연 2회(반기별 1회) 공인검사기관에 검사를 의뢰하며, 자체 용수 검사는 월 1회(관능, pH, 대장균 등) 실시합니다.",
     "저수조관리": "저수조는 연 2회(6개월마다) 청소 및 소독을 실시해야 합니다.",
     "필터교체주기": "용수 처리 시설의 마이크로 필터는 3개월(또는 6개월)마다, 활성탄(카본) 필터 및 이온교환수지는 2년마다 교체 또는 재생해야 합니다.",
-    
-    # 11. 제품 회수 및 추적성 관리 기준 (제품회수 관리기준서)
     "회수등급별조치": "위해식품 발생 시, 1등급은 24시간 이내, 2등급은 48시간 이내, 3등급은 72시간 이내에 영업자에게 회수명령 공문을 전달해야 합니다. 회수명령을 받은 영업자는 1등급은 1일 이내, 2~3등급은 2일 이내에 관할 기관에 회수계획서를 보고해야 합니다.",
     "회수교육및훈련": "회수 업무와 관련하여 1회/년 이상 식품안전팀원 대상 교육을 실시하며, 2회/년 이상 모의회수(추적성) 훈련을 주관합니다. 모의회수 훈련 시 원인 파악 및 추적 시간은 1시간 이내, 회수율은 100%를 목표로 합니다.",
     "추적성관리": "원부자재 입고부터 제품 출하까지 생산/작업/거래/검사 기록을 철저히 관리하여 추적성을 확보하며, 생산 및 판매 관련 서류는 2년간 보관합니다.",
-    
-    # 12. 보관 및 운반 관리 기준 (보관 및 운반 관리 기준서)
     "보관온도": "일반 원/부자재는 실온(1~35℃), 냉장 제품은 0~10℃(원유 0~4℃), 냉동 제품은 -18℃ 이하에서 보관합니다.",
     "운반온도관리": "차량 운송 시 상차 전 냉동기를 가동(10분 이상 예비냉각)하여 냉장은 0~10℃, 냉동은 -18℃ 이하를 유지해야 합니다.",
     "포장기라인정체제품": "별도 냉각 장치가 없는 포장기에서 제품이 정체될 경우, 2시간 이내에는 품질 검사 후 생산 여부를 판단하고, 2시간을 초과한 제품은 전량 폐기 조치합니다.",
-    
-    # 13. 가공두유 제조공정 및 HACCP PLAN
     "대두가공공정": "대두는 110~140℃(국산콩 220℃ 이상)에서 5분 이상 Heating하여 반할두로 제조하며, 70~90℃ 열수로 2분 이상 침지합니다. 1차 마쇄는 1,700rpm, 2차 마쇄는 85℃ 열수 투입 후 5,800rpm으로 진행합니다. 원심분리는 4,800rpm으로 작동합니다.",
     "CCP1B유액멸균_두유": "간접살균은 135~150℃에서 30~45초간 멸균하며, 직접살균은 143~153℃에서 3.6~4.4초간 멸균합니다. 135℃ 미만 시 자동 생산 중단, 30초 미만 살균 시 전량 폐기, 45초 초과 시 관능/이화학 검사 후 출고를 결정합니다.",
     "CCP2P여과_두유": "여과망 사이즈는 1.0Φ를 사용하며, 생산 시작 전/종료 후 여과망 사이즈 및 파손 여부를 점검합니다. 파손 확인 시 해당 생산분은 전량 폐기합니다.",
@@ -110,8 +87,6 @@ KNOWLEDGE_BASE = {
     "CCP3B포장지멸균_콤비팩": "콤비팩은 과산화수소 온도 250~290℃, 분사량 350~450μl/s 조건으로 분사하여 멸균합니다. 온도 및 분사량 이탈 시 생산 중단 후 점검하며 이탈된 제품은 폐기합니다.",
     "포장속도및탱크": "무균포장기 속도는 설비별로 6,000~40,000 pak/h로 다양하며, Aseptic Tank는 1.0~2.0 cm²/Hg 압력을 유지합니다.",
     "자석봉관리": "이물 제거를 위해 정선/석발 및 여과 공정에서 10,000 가우스 이상의 영구자석을 이용합니다.",
-
-    # 14. 멸균유 제조공정 및 HACCP PLAN (우유, 강화우유, 가공유)
     "원유수유및여과": "0~4℃ 원유는 60 mesh(A2원유는 1차 40 mesh, 2차 100 mesh 타공) 여과망으로 이물을 제거하며, 1일 2회 분해 점검을 실시합니다. 원심 청정기는 5,300~6,000 rpm으로 작동합니다.",
     "유당분해우유공정": "유당분해 효소를 접종하여 4~6℃에서 24~27시간 배양하며, 튜블러 멸균 공정에서 135~150℃, 3.8초 이상 멸균합니다.",
     "저지방표준화공정": "탈지유와 원유를 혼합하여 유지방 함량을 0.8~1.2%(저지방), 3.1~3.5%(표준화)로 맞추며, 10,000 rpm의 크림분리기를 사용합니다.",
@@ -120,18 +95,12 @@ KNOWLEDGE_BASE = {
     "멸균유CCP1B_유크림": "유크림의 살균 한계기준은 92~100℃에서 30초 이상 살균(유량 500 L/hr 이하)하는 것입니다.",
     "멸균유CCP1B_중국조제유": "중국 수출용 조제유(병우유)의 한계기준은 127~130℃에서 15초 이상 살균하는 것입니다.",
     "멸균유CCP2P_여과": "여과 공정 한계기준은 포장 타입별로 우유류 카톤포장 100Mesh, 병포장 120Mesh, 유크림 80Mesh 여과망을 사용하며, 파손 여부를 확인합니다.",
-
-    # 15. 발효유 제조공정 및 HACCP PLAN (발효유, 농후발효유)
     "발효유배양공정": "배양탱크(6,000L 등)에서 4종의 유산균과 유당분해효소를 접종하여 38~42℃(여름 38℃, 봄/가을 40℃, 겨울 42℃)에서 6~8시간 배양한 후 10℃ 이하(그릭요거트는 30℃)로 냉각합니다.",
     "발효유CCP1B_배양액살균": "배양액 살균(CCP-1B) 한계기준은 95~110℃에서 4분 15초 이상(유량 7,000 L/hr 미만)입니다. 살균온도가 정상온도로 복귀하지 못할 시 살균을 정지시키고 설비 분해 정비 후 재 CIP 및 살균합니다.",
     "발효유CCP2P_여과": "여과(CCP-2P) 한계기준은 포장 타입별로 병 포장 80Mesh, 호상발효유 60Mesh, 카톤 포장 50Mesh 여과망 사이즈 및 파손 여부입니다. 작업 개시 전/종료 후 1회씩 육안 점검합니다.",
     "발효유CCP3P_금속검출기": "호상발효유 및 병포장 라인의 금속검출기(CCP-3P) 한계기준은 Fe 1.5mm, SUS 2.5mm 이상 불검출입니다. 작업 시작 전/종료 후 및 2시간 간격으로 시편을 통과시켜 모니터링합니다.",
-
-    # 16. 원액두유 제조공정 및 HACCP PLAN
     "원액두유CCP1P_여과": "원액두유 여과(CCP-1P) 한계기준은 여과망 사이즈 30Mesh 및 파손 여부입니다. 작업 개시 전/종료 후 육안 점검을 실시하며 파손 시 생산분을 전량 폐기합니다.",
     "원액두유CCP2B_두유액살균": "원액두유 살균(CCP-2B) 한계기준은 살균온도 100~130℃, 살균시간 3초 이상(유량 4,500 L/hr 이하)입니다. 3초 미만으로 살균된 유액은 폐기합니다.",
-
-    # 17. 음료 제조공정 및 HACCP PLAN
     "음료균질": "균질 시 돌(파인, 망고) 및 유산균음료는 150 bar, 스위플(사과, 레드오렌지, 샤인머스캣) 제품은 200 bar의 압력으로 균질합니다.",
     "음료추출공정": "차(Tea) 추출 공정은 70~90℃ 열수로 20~50분간 추출하며, 백 필터(5μm) 및 마이크로 필터(1μm) 파우치 필터를 사용합니다.",
     "음료CCP1B_과채음료류": "과채음료, 과채주스, 혼합음료, 유산균음료, 액상차의 유액멸균(CCP-1B) 한계기준은 90~130℃(또는 135~150℃)에서 30~37초간입니다.",
@@ -139,22 +108,16 @@ KNOWLEDGE_BASE = {
     "음료CCP1B_커피": "커피의 유액멸균(CCP-1B) 한계기준은 135~150℃에서 10~14초간입니다.",
     "음료CCP2P_여과": "음료류 여과(CCP-2P) 한계기준은 여과망 1.0Φ 사용 및 파손 여부 확인입니다.",
     "음료CCP3B_포장지멸균": "테트라팩은 과산화수소 농도 32~50% 또는 eBeam 전류값 95~105%로, 콤비블럭은 과산화수소 온도 250~290℃, 분사량 350~450μl/s(150~250μl/s 등 제품별 상이)로 포장지 멸균을 관리합니다.",
-
-    # 18. 집유장 제조공정 및 HACCP PLAN (집유장 관리 기준서)
     "집유장원유검사": "원유 입고 시 관능, 비중(1.028~1.034), 알콜(70% 음성), 진애(2.0mg 이하), 산도(0.14% 이하), 조지방(3.2% 이상), 세균발육억제물질(음성), 가수/빙점(-508 이하) 등을 검사하며, A2 원유는 A2 단백질 100% 여부를 추가 확인합니다.",
     "집유장원유저장": "원유의 보관 및 유통 온도는 농가 0~4℃, 탱크로리 0~7℃, 저유조 0~7℃로 관리됩니다.",
     "집유장여과및청정": "수유 시 60 mesh 여과망으로 이물을 제거하며(1일 2회 분해 점검), 일반 원유는 5,300~6,000 rpm의 청정기를 거치나 A2 및 무항생제 원유는 청정 공정을 제외합니다.",
     "집유차량세척": "집유 차량은 1일 2회(오전/오후 수유 후) 열수 CIP를 실시하고, 2일에 1회 약품 CIP를 실시합니다.",
     "집유장CCP1B_원유저장": "원유저장(CCP-1B) 한계기준은 저장온도 0~7℃입니다. 2시간 간격으로 온도를 모니터링하며, 한계기준 이탈 시 냉각수 온도(6℃ 이하)를 확인하고, 알콜/산도/pH/관능검사 등을 통해 법적 기준(10℃ 이하) 적합 시 선출고 또는 폐기 여부를 결정합니다.",
     "집유장탱크수량": "집유 및 원유 보관에 운용되는 원유저장탱크는 100,000L 4기, 50,000L 4기, 30,000L 3기, 6,000L 3기로 총 14기입니다.",
-
-    # 19. 환자용식품 제조공정 및 HACCP PLAN
     "환자용식품가공공정": "대두 Heating/탈피는 110~140℃에서 5분 이상 실시하며, 침지는 90℃ 열수로 1분 이상 진행합니다(고형분 9% 이상 제품은 예외). 마쇄는 1차 1,700 rpm, 2차 85℃ 열수 투입 후 5,800 rpm으로 실시하고, 3,500 rpm으로 원심분리합니다. 균질 시 압력은 300 bar 이하로 관리됩니다.",
     "환자용식품CCP1B_유액멸균": "간접살균은 135~150℃에서 30~37초간, 직접살균은 143~153℃에서 3.6~8.8초간 멸균합니다. 한계온도 이탈 시 자동 정지 후 CIP 및 장치 멸균을 재실시하며, 30초/3.6초 미만 살균 시 전량 폐기, 한계시간 초과 시 관능 및 이화학 검사 후 출고를 결정합니다.",
     "환자용식품CCP2P_여과": "여과(CCP-2P) 한계기준은 여과망 사이즈 1.0Φ 및 파손 여부이며, 작업 개시 전/종료 후 육안으로 점검하여 이탈 시 해당 생산분을 전량 폐기합니다.",
     "환자용식품CCP3B_포장지멸균": "테트라팩은 과산화수소 농도 32~50% 또는 eBeam 전류값 95~105%로, 콤비블럭은 과산화수소 온도 250~290℃, 분사량 350~450μl/s로 포장지를 멸균하며 이탈된 제품은 즉각 폐기 조치합니다.",
-
-    # 20. 작업장 평면도 및 동선 관리
     "작업장동선및레이아웃": "작업장 평면도에 따르면 작업자 이동 경로(녹색), 폐수 이동 경로(청색), 원유 이송 흐름도(분홍색), 탱크로리 CIP 흐름도(보라색)가 명확히 분리되어 교차오염을 방지하고 있습니다. 주요 구역은 수유실, 수유 검사실, 원유취급실, 우유 가공, 발효유 가공 구역 등으로 철저히 구획되어 정밀 통제됩니다."
 }
 
@@ -190,7 +153,7 @@ GW_DOC_LIST = [
     "우유 포장 공정관리 일보", "대리점 클레임 현황", "문제점 개선 대책 결과 보고", "소비자 클레임 현황(제조단계, 공장)", 
     "현장 온도센서 공인기관 검·교정 결과", "발효유 포장 공정관리 일보", "중국 수출 우유 제품검사 일보", "음료류 일반검사 일보", 
     "부자재 입고 검수서", "압축공기 미생물검사 결과", "표면오염도 검사 결과", "낙하세균 검사 결과", "세척.소독제 농도 검증 결과", 
-    "용수 검사 성적서", "방역관리 결과 보고", "위생교육", "냉장/냉동 창고 온도 모니터링 일지"
+    "용수 검사 성적서", "방역 관리 리포트", "위생교육", "냉장/냉동 창고 온도 모니터링 일지"
 ]
 
 # ==========================================
@@ -244,7 +207,6 @@ MASTER_DOC_REQUIREMENTS = {
 # ==========================================
 # [1] 상태 초기화 및 커스텀 디자인
 # ==========================================
-# 💡 [캐시 영구 보존 로직] F5(새로고침) 후에도 로컬 기록 파일에서 캐시 ID 자동 복원
 if "master_cache_name" not in st.session_state:
     if os.path.exists(CACHE_META_FILE):
         try:
@@ -345,30 +307,6 @@ def is_blacklisted(filename, category_name=""):
     if "인증서" in category_name and ("리스트" in filename or filename.endswith(".hwp")): return True
     return False
 
-def sort_files_smartly(files, priority_keywords, db_list):
-    def get_priority_score(filename):
-        ai_keyword = ""
-        for row in db_list:
-            if row.get('파일명') == filename:
-                ai_keyword = str(row.get('키워드', ''))
-                break
-        
-        for idx, kw in enumerate(priority_keywords):
-            if kw in ai_keyword: return idx - 1000
-            if kw in filename: return idx 
-        return 999 
-
-    def get_expire_date(filename):
-        for row in db_list:
-            if row.get('파일명') == filename or (row.get('키워드') and row.get('키워드') in filename):
-                return str(row.get('만료일', '0000-00-00'))
-        return "0000-00-00"
-
-    files.sort(key=lambda x: x['name'], reverse=True)
-    files.sort(key=lambda x: get_expire_date(x['name']), reverse=True)
-    files.sort(key=lambda x: get_priority_score(x['name']))
-    return files
-
 @st.cache_data(ttl=3600)
 def get_target_folder_ids(_service, root_folder_id):
     folders = [root_folder_id]
@@ -414,16 +352,38 @@ def download_file_bytes(service, file_id):
     fh.seek(0)
     return fh.read()
 
+# 💡 [핵심 업데이트] 0.1초 다이렉트 뷰어 (DB 기반 호출)
 def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None):
     service = get_drive_service()
     if not service: return
+    
     st.session_state.update({
         "search_done": True, "search_keyword": display_keyword, "search_question": display_keyword,
         "target_folder_key": folder_key, "gw_keyword": gw_keyword,
         "priority_keywords": priority_keywords or [], "last_file_id": ""
     })
     
-    if folder_key and folder_key in FLAT_FOLDER_DB:
+    db_list = st.session_state.auto_db
+    matched_files = []
+    
+    # 1. 시트 DB가 존재하고 마스터 키워드가 일치하면 0초만에 ID 즉각 획득
+    if db_list and priority_keywords:
+        for row in db_list:
+            kw = row.get("키워드", "")
+            if kw in priority_keywords:
+                matched_files.append({
+                    'id': row.get("파일 ID", ""),
+                    'name': row.get("파일명", ""),
+                    'webViewLink': row.get("뷰어 링크", ""),
+                    'createdTime': row.get("발급일", ""),
+                    'mimeType': 'application/pdf'  # Viewer 렌더링용 임시 타입
+                })
+    
+    if matched_files:
+        st.session_state.found_files = matched_files
+        st.success(f"⚡ [DB 다이렉트 매칭] {len(matched_files)}개의 최신 서류를 0.1초 만에 불러왔습니다.")
+    elif folder_key and folder_key in FLAT_FOLDER_DB:
+        # 2. DB에 없거나 폴백(Fallback) 상황 시 기존 드라이브 스캔 실행
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
             target_folders = get_target_folder_ids(service, target_id)
@@ -441,12 +401,10 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
                             all_files.append(f)
                     page_token = res.get('nextPageToken')
                     if not page_token: break
-                
             st.session_state.found_files = all_files
+            st.success(f"✅ 정밀 탐색 완료! 연관 문서 {len(st.session_state.found_files)}개 확보.")
     else:
         st.session_state.found_files = []
-    
-    st.success(f"✅ 정밀 탐색 완료! 연관 문서 {len(st.session_state.found_files)}개 확보.")
 
 def execute_deep_search(query_text):
     service = get_drive_service()
@@ -505,7 +463,6 @@ with st.sidebar:
                 try:
                     uploaded_laws = []
                     
-                    # 💡 [핵심 최적화] 방문심사 전체가 아닌 챗봇에 꼭 필요한 핵심 4개 폴더만 타겟팅하여 최신본 추출
                     target_keys = ["인증서", "기준서", "선행요건", "FSSC22000"]
                     all_target_fids = []
                     for k in target_keys:
@@ -525,11 +482,10 @@ with st.sidebar:
                             pt = res.get('nextPageToken')
                             if not pt: break
                     
-                    # 최신 수정일 기준으로 정렬하여 가장 유효한 최신 데이터 확보
                     drive_pdfs.sort(key=lambda x: x.get('modifiedTime', ''), reverse=True)
                     
-                    # 안정적인 API 호출을 위해 최신 30개로 한정 (핵심 법령 및 인증서 위주)
-                    target_pdfs = drive_pdfs[:30]
+                    # 💡 파일 개수 제한 해제
+                    target_pdfs = drive_pdfs
                     cache_progress = st.progress(0)
                     
                     for i, pf in enumerate(target_pdfs):
@@ -564,7 +520,7 @@ with st.sidebar:
                     with open(CACHE_META_FILE, "w") as f:
                         json.dump({"name": law_cache.name, "timestamp": time.time()}, f)
                         
-                    st.success("✅ 구글 드라이브 핵심 폴더(인증서/기준서) 기반 최신 캐싱 완료! (12시간 유지)")
+                    st.success("✅ 구글 드라이브 핵심 폴더 기반 최신 캐싱 완료! (12시간 유지)")
                 except Exception as e:
                     st.error(f"드라이브 캐싱 중 오류 발생: {e}")
                 
@@ -582,35 +538,65 @@ with st.sidebar:
     with sidebar_tab1:
         st.caption("페이퍼(수기) 일지를 제외한 100% 즉시 증빙 가능한 전산/드라이브 서류 전용 버튼입니다.")
         
-        with st.expander("📁 1. 인허가 및 인증", expanded=True):
-            if st.button("영업신고/공장등록", use_container_width=True): execute_exact_match("인허가", "인허가 서류", "", ["식품제조가공업", "유가공업", "집유업", "사업자등록증", "공장등록증"])
-            if st.button("HACCP/FSSC/FDA", use_container_width=True): execute_exact_match("인증서", "인증서", "", ["가공두유", "유가공업", "FSSC22000", "FDA"])
-            if st.button("K-MILK/무항생제", use_container_width=True): execute_exact_match("특수 인증", "인증서", "", ["K-MILK", "무항생제"])
-            if st.button("소독업/방제 자격", use_container_width=True): execute_exact_match("소독업", "인허가 서류", "", ["소독업", "삼양인터네셔날"])
+        # 💡 [핵심 업데이트] 심사관의 현장 검증 순서에 맞춘 5단계 레이아웃 및 50여 개 항목의 완벽한 원클릭 매핑
+        with st.expander("📁 1. 영업 인허가 및 각종 인증서", expanded=True):
+            if st.button("영업신고/공장등록/가설건축물", use_container_width=True): 
+                execute_exact_match("인허가", "인허가 서류", "", [
+                    "식품제조가공업", "유가공업", "집유업", "사업자등록증", "공장등록증", 
+                    "수입식품영업", "식품소분업", "축산물판매업", "건강기능식품영업", "통신판매업", "집단급식소", "화장품책임판매", "지하수개발허가", "가설건축물"
+                ])
+            if st.button("HACCP 및 FSSC 인증서", use_container_width=True): 
+                execute_exact_match("인증서", "인증서", "", [
+                    "HACCP_가공두유", "HACCP_원액두유", "HACCP_유가공업", "HACCP_환자식",
+                    "HACCP_과채주스", "HACCP_과채음료", "HACCP_혼합음료", "HACCP_유산균음료", "HACCP_커피", "HACCP_액상차", 
+                    "CHINA_HACCP", "FSSC22000", "FDA_FCE", "FDA_FFR"
+                ])
+            if st.button("K-MILK / 무항생제 / 유기농", use_container_width=True): 
+                execute_exact_match("특수 인증", "인증서", "", ["K-MILK", "무항생제", "유기가공식품"])
 
-        with st.expander("📘 2. 기준서 및 절차"):
-            if st.button("선행요건/HACCP 기준", use_container_width=True): execute_exact_match("기준서", "선행요건", "", ["선행요건", "HACCP"])
-            if st.button("위생/해충/알러겐 절차", use_container_width=True): execute_exact_match("위생 절차", "기준서", "", ["위생 관리", "해충", "알러겐"])
-            if st.button("이물/식품보안 관리", use_container_width=True): execute_exact_match("보안 절차", "선행요건", "", ["이물", "식품보안", "사기대응"])
-            if st.button("위기대응 및 회수 절차", use_container_width=True): execute_exact_match("회수 절차", "기준서", "", ["위기관리", "제품회수"])
+        with st.expander("📘 2. 사내 규정 및 절차 (매뉴얼)"):
+            if st.button("선행요건 / HACCP 기준서", use_container_width=True): 
+                execute_exact_match("기준서", "선행요건", "", ["선행요건", "HACCP"])
+            if st.button("위생 / 해충 / 알러겐 절차", use_container_width=True): 
+                execute_exact_match("위생 절차", "기준서", "", ["위생 관리", "해충", "알러겐"])
+            if st.button("이물 / 식품보안 절차", use_container_width=True): 
+                execute_exact_match("보안 절차", "선행요건", "", ["이물", "식품보안", "사기대응"])
+            if st.button("위기대응 및 회수 절차", use_container_width=True): 
+                execute_exact_match("회수 절차", "기준서", "", ["위기관리", "제품회수"])
         
-        with st.expander("🧼 3. 위생 및 환경 점검"):
-            if st.button("수질검사/저수조", use_container_width=True): execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["정기 수질 검사", "노로바이러스", "먹는물", "물탱크"])
-            if st.button("해충 방제 레포트", use_container_width=True): execute_exact_match("방제 레포트", "방충방서 관련 서류", "방역관리 결과 보고")
-            if st.button("작업자 보건증", use_container_width=True): execute_exact_match("보건증", "선행요건", "", ["보건증"])
-            if st.button("손 위생 및 낙하세균", use_container_width=True): execute_exact_match("위생 검사", "", "낙하세균 검사 결과")
-            if st.button("냉장/냉동 온도 일지", use_container_width=True): execute_exact_match("온도 일지", "", "냉장/냉동 창고 온도 모니터링 일지")
+        with st.expander("🧼 3. 위생·환경 평가 및 인력 점검"):
+            if st.button("수질검사 성적서 / 저수조 청소", use_container_width=True): 
+                execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["수질검사_반기", "수질검사_월간", "수질검사_노로", "저수조청소"])
+            if st.button("방역 관리 리포트 (GW)", use_container_width=True): 
+                execute_exact_match("방제 레포트", "방충방서 관련 서류", "방역 관리 리포트", ["방충방서_월간"])
+            if st.button("종사자 보건증", use_container_width=True): 
+                execute_exact_match("보건증", "선행요건", "", ["보건증"])
+            if st.button("손 위생 및 낙하세균 (GW)", use_container_width=True): 
+                execute_exact_match("위생 검사", "", "낙하세균 검사 결과")
+            if st.button("냉장/냉동 창고 온도 일지 (GW)", use_container_width=True): 
+                execute_exact_match("온도 일지", "", "냉장/냉동 창고 온도 모니터링 일지")
             
-        with st.expander("⚙️ 4. 공정 및 설비 이력"):
-            if st.button("공정관리 일보", use_container_width=True): execute_exact_match("공정관리 일보", "", "공정관리 일보")
-            if st.button("계측기 검교정 이력", use_container_width=True): execute_exact_match("계측기", "", "공인기관 검·교정 결과")
-            if st.button("설비 유지보수 이력", use_container_width=True): execute_exact_match("설비이력", "설비이력", "")
+        with st.expander("⚙️ 4. CCP 공정 관리 및 설비 검증"):
+            if st.button("공정관리 일보 (GW)", use_container_width=True): 
+                execute_exact_match("공정관리 일보", "", "공정관리 일보")
+            if st.button("상업적 무균테스트 (GW)", use_container_width=True): 
+                execute_exact_match("무균테스트", "", "상업적 무균테스트 결과 보고서")
+            if st.button("계측기 검·교정 이력 (GW)", use_container_width=True): 
+                execute_exact_match("계측기", "", "공인기관 검·교정 결과")
+            if st.button("설비 유지보수 이력", use_container_width=True): 
+                execute_exact_match("설비이력", "설비이력", "")
             
-        with st.expander("📦 5. 원부자재 및 품질 검사"):
-            if st.button("입고 검수서", use_container_width=True): execute_exact_match("입고검수", "", "입고 검수서")
-            if st.button("자가품질/제품검사", use_container_width=True): execute_exact_match("품질검사", "", "일반검사 일보")
-            if st.button("클레임 현황", use_container_width=True): execute_exact_match("클레임", "", "부적합 현황 보고")
-            if st.button("교육/모의회수 기록", use_container_width=True): execute_exact_match("교육/회수", "모의회수", "위생교육", ["훈련"])
+        with st.expander("📦 5. 원부자재 관리 및 사후 추적성"):
+            if st.button("입고 검수서 (GW)", use_container_width=True): 
+                execute_exact_match("입고검수", "", "입고 검수서")
+            if st.button("자가품질 및 제품검사 (GW)", use_container_width=True): 
+                execute_exact_match("품질검사", "", "일반검사 일보")
+            if st.button("클레임 현황 및 시정조치 (GW)", use_container_width=True): 
+                execute_exact_match("클레임", "", "부적합 현황 보고")
+            if st.button("교육 훈련 및 모의회수 기록", use_container_width=True): 
+                execute_exact_match("교육/회수", "모의회수", "위생교육", ["법정위생교육", "HACCP교육", "모의회수"])
+            if st.button("PL보험 및 영업배상책임보험", use_container_width=True): 
+                execute_exact_match("책임보험", "인증서", "", ["책임보험"])
 
 # ==========================================
 # [5] 메인 UI 탭 구성
@@ -626,31 +612,15 @@ with tab1:
         
         raw_files = [f for f in st.session_state.found_files if not is_blacklisted(f['name'], keyword)]
         
-        db_list = st.session_state.auto_db
-        
-        if st.session_state.priority_keywords and db_list:
-            strict_matched_files = []
-            for f in raw_files:
-                ai_kw = next((str(row.get('키워드', '')) for row in db_list if row.get('파일명') == f['name']), "")
-                if any(req_kw in ai_kw for req_kw in st.session_state.priority_keywords):
-                    strict_matched_files.append(f)
-            if strict_matched_files:
-                raw_files = strict_matched_files
-
-        if st.session_state.priority_keywords:
-            raw_files = sort_files_smartly(raw_files, st.session_state.priority_keywords, db_list)
-        else:
-            raw_files.sort(key=lambda x: x['name'], reverse=True)
-
-        if not raw_files and st.session_state.target_folder_key is not None:
+        if not raw_files and st.session_state.target_folder_key is not None and not st.session_state.priority_keywords:
             st.warning("⚠️ 지정 폴더 내 구글 드라이브 일치 문서가 없습니다. (전자결재 문서를 확인하세요)")
             
         elif raw_files:
             for f in raw_files: f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
-            years = ["전체보기 (우선순위 정렬)"] + sorted(list(set([f['year'] for f in raw_files])), reverse=True)
+            years = ["전체보기 (최신순)"] + sorted(list(set([f['year'] for f in raw_files])), reverse=True)
             
             sel_year = st.radio("📅 연도 필터", years, horizontal=True, label_visibility="collapsed")
-            f_list = raw_files if sel_year == "전체보기 (우선순위 정렬)" else [f for f in raw_files if f['year'] == sel_year]
+            f_list = raw_files if sel_year == "전체보기 (최신순)" else [f for f in raw_files if f['year'] == sel_year]
             
             if any(f.get('snippet') for f in f_list):
                 st.markdown("### 🔎 본문 매칭 스니펫 (미리보기)")
@@ -674,7 +644,7 @@ with tab1:
                 st.session_state.view_url = top_file['webViewLink']
                 st.session_state.preview_url = f"https://drive.google.com/file/d/{top_file['id']}/preview"
                 
-                with st.spinner("🤖 AI 문맥 분석 중 (캐시 연동 시 0.1초 소요)..."):
+                with st.spinner("🤖 AI 문맥 확증 분석 중 (캐시 연동 시 0.1초 소요)..."):
                     try:
                         file_bytes = download_file_bytes(get_drive_service(), top_file['id'])
                         file_ext = ".pdf" if "pdf" in top_file.get('mimeType', '').lower() else ".jpg"
@@ -685,7 +655,11 @@ with tab1:
                         gemini_file = genai.upload_file(path=tmp_doc_path)
                         
                         cache_name = st.session_state.get("master_cache_name")
-                        prompt = f"질문에 답하세요: {st.session_state.search_question}\n1. 💡 사내 HACCP 기준 및 관련 법령 연계 요약\n2. 📄 방금 업로드된 문서 검증 요약"
+                        
+                        prompt = f"""질문에 답하세요: {st.session_state.search_question}
+                        0. 🚨 [최우선 교차검증]: 방금 화면에 띄운 이 문서가 '{st.session_state.search_keyword}' 관련 서류가 확실하게 맞는지, 제목과 발급 기관/내용을 대조하여 1문장으로 확증(또는 경고) 하시오.
+                        1. 💡 사내 HACCP 기준 및 관련 법령 연계 요약
+                        2. 📄 문서 핵심 내용 요약 (발급일, 개정상태 등)"""
                         
                         if cache_name:
                             try:
@@ -788,7 +762,7 @@ with tab3:
             with st.spinner("구글 시트 마스터 DB와 동기화 중..."):
                 try:
                     result = sheet_service.spreadsheets().values().get(
-                        spreadsheetId=SHEET_ID, range="DB!A:E"
+                        spreadsheetId=SHEET_ID, range="DB!A:J"
                     ).execute()
                     values = result.get('values', [])
                     
@@ -816,16 +790,18 @@ with tab3:
             "스캔된 파일명": "-",
             "발급일": "-",
             "만료일": "-",
+            "개정(Rev)": "-",
             "D-Day": "-",
             "상태": "🚨 누락 (파일 없음)"
         }
         
         if key in db_dict:
             doc = db_dict[key]
-            row_data["스캔된 파일명"] = doc.get("파일명", "")
+            row_data["스캔된 파일명"] = doc.get("문서_실제제목", doc.get("파일명", ""))
             row_data["발급일"] = doc.get("발급일", "")
             exp_date_str = str(doc.get("만료일", ""))
             row_data["만료일"] = exp_date_str
+            row_data["개정(Rev)"] = doc.get("개정번호", "-")
             
             if exp_date_str == "영구":
                 row_data["D-Day"] = "-"
@@ -896,7 +872,7 @@ with tab4:
                             while True:
                                 res = service.files().list(
                                     q=f"'{folder_id}' in parents and trashed = false", 
-                                    fields='nextPageToken, files(id, name, mimeType)', 
+                                    fields='nextPageToken, files(id, name, mimeType, webViewLink)', 
                                     pageSize=1000, pageToken=page_token).execute()
                                 for f in res.get('files', []):
                                     if f['mimeType'] != 'application/vnd.google-apps.folder':
@@ -914,7 +890,7 @@ with tab4:
                 st.session_state.files_to_scan = valid_files
 
     with col2:
-        if st.button("🔄 2단계: 전체 스캔 및 시트 저장 실행", type="primary", use_container_width=True):
+        if st.button("🔄 2단계: 초정밀 전체 스캔 및 시트 저장 실행", type="primary", use_container_width=True):
             if "files_to_scan" not in st.session_state or not st.session_state.files_to_scan:
                 st.warning("먼저 '1단계: 대상 파일 조회' 버튼을 눌러주세요.")
             else:
@@ -937,9 +913,14 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
-                prompt = """이 문서의 핵심 제목, 발급일, 만료일(유효기간)을 추출해.
+                prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                 
-                [중요: 마스터 키워드 맵핑 규칙]
+                [행동 강령 - 환각 원천 차단]
+                1. 문서의 날짜를 절대 임의로 계산하거나 유추하지 마. 활자나 도장으로 명확히 찍힌 날짜만 추출하고, 없으면 "미상"으로 기재해.
+                2. 단순히 파일명이나 단어 몇 개가 겹친다고 성급히 분류하지 마. 발급 기관, 문서 목적, 하단 직인 유무를 종합 분석하여 확신할 때만 마스터 키워드를 부여해.
+                3. 문서 우측 상단이나 하단에 개정번호(Rev.0, Rev.1 등)가 있으면 반드시 추출해.
+                
+                [마스터 키워드 맵핑 규칙]
                 반드시 아래 정해진 키워드 중 가장 일치하는 1개로 변환해서 "키워드" 값에 넣어.
                 - 사업자등록증 -> "사업자등록"
                 - 공장등록증명서 -> "공장등록"
@@ -989,12 +970,19 @@ with tab4:
                 유효기간이나 갱신 주기가 없는 단순 매뉴얼, 기준서만 "키워드"에 "PASS"라고 적어.
                 
                 반드시 JSON 형식으로만 응답할 것.
-                형식: {"키워드": "HACCP_가공두유", "발급일": "YYYY-MM-DD", "만료일": "YYYY-MM-DD"}"""
+                형식: {
+                    "키워드": "HACCP_가공두유", 
+                    "문서_실제제목": "본문 공식 명칭", 
+                    "발급일": "YYYY-MM-DD", 
+                    "만료일": "YYYY-MM-DD",
+                    "개정번호": "Rev.0",
+                    "분류근거": "발급기관 및 본문 내용이 식약처 가공두유 HACCP 인증임이 확인됨"
+                }"""
                 
                 try:
                     total = len(files_to_scan)
                     for i, f in enumerate(files_to_scan):
-                        update_log(f"⏳ [{i+1}/{total}] 문서 다운로드 및 분석 중: {f['name']}")
+                        update_log(f"⏳ [{i+1}/{total}] 문서 초정밀 분석 중: {f['name']}")
                         progress_bar.progress((i + 1) / total)
                         try:
                             file_bytes = download_file_bytes(service, f['id'])
@@ -1016,6 +1004,8 @@ with tab4:
                             
                             if parsed.get("키워드") != "PASS":
                                 parsed["파일명"] = f['name']
+                                parsed["파일 ID"] = f['id']
+                                parsed["뷰어 링크"] = f['webViewLink']
                                 new_db_entries.append(parsed)
                                 update_log(f"✅ [{i+1}/{total}] 추출 성공! 키워드: {parsed.get('키워드')}")
                             else:
@@ -1060,15 +1050,26 @@ with tab4:
                         
                         if sheet_service and SHEET_ID:
                             try:
-                                sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:E").execute()
+                                sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:J").execute()
                                 
-                                headers = ["파일명", "키워드", "발급일", "만료일", "법정주기(개월)"]
+                                headers = ["키워드", "파일명", "문서_실제제목", "발급일", "만료일", "주기(개월)", "개정번호", "분류근거", "파일 ID", "뷰어 링크"]
                                 values = [headers]
                                 
                                 for row in filtered_db_entries:
                                     kw = row.get("키워드", "")
                                     cycle = str(MASTER_DOC_REQUIREMENTS.get(kw, {}).get("주기", 0))
-                                    values.append([row.get("파일명",""), kw, row.get("발급일",""), row.get("만료일",""), cycle]) 
+                                    values.append([
+                                        kw, 
+                                        row.get("파일명",""), 
+                                        row.get("문서_실제제목",""), 
+                                        row.get("발급일",""), 
+                                        row.get("만료일",""), 
+                                        cycle,
+                                        row.get("개정번호","-"),
+                                        row.get("분류근거",""),
+                                        row.get("파일 ID",""),
+                                        row.get("뷰어 링크","")
+                                    ]) 
                                 
                                 body = {'values': values}
                                 sheet_service.spreadsheets().values().update(
@@ -1078,7 +1079,7 @@ with tab4:
                                 if scan_aborted:
                                     st.warning("⚠️ 스캔은 중간에 멈췄지만, 방금 전까지 추출된 '최신' 데이터는 구글 시트에 안전하게 저장되었습니다!")
                                 else:
-                                    st.success(f"🎉 중복 제거 완료! 총 {len(filtered_db_entries)}개의 최신 데이터만 구글 시트 연동이 완료되었습니다! 3번 탭에서 확인하세요.")
+                                    st.success(f"🎉 중복 제거 완료! 총 {len(filtered_db_entries)}개의 최신 메타데이터가 구글 시트에 저장되었습니다! (3번 탭 확인)")
                                 update_log(f"✅ 구글 시트 기록 완료! (최종 {len(filtered_db_entries)}개 저장됨)")
                             except Exception as e:
                                 st.error(f"⚠️ 구글 시트 저장 실패 (권한/ID 문제 확인 필요): {e}")
@@ -1123,26 +1124,33 @@ with tab5:
                         base_model = genai.GenerativeModel(model_name=MODEL_NAME)
                     
                     # ---------- Agent A: 정보 추출 및 분석 ----------
-                    st.write("🕵️‍♂️ **[Agent A]** 질문 의도 및 관련 공정/팩트 추출 중...")
+                    st.write("🕵️‍♂️ **[Agent A]** 질문 의도 및 전체 연계 공정(End-to-End) 추출 중...")
                     prompt_A = f"""[Agent A 임무: 팩트 추출기]
                     지식베이스:\n{kb_str}\n\n사용자 질문: {prompt}
-                    사용자의 질문과 관련된 우리 공장의 핵심 공정(온도, 시간, 설비 등)과 지식베이스 상의 팩트를 요약하여 객관적인 리포트를 작성하시오."""
+                    
+                    임무: 사용자의 질문에 답변하기 위한 객관적인 팩트 리포트를 작성하시오.
+                    
+                    💡 [범용적 End-to-End 추출 원칙 (절대 규칙)]:
+                    사용자가 특정 단일 공정(예: 살균, 여과)이나 특정 반제품(예: 원액두유, 배양액)에 국한하여 질문하더라도, 절대 그 부분만 단편적으로 추출하지 마시오.
+                    지식베이스를 탐색하여 해당 제품/공정과 필연적으로 연결되는 [원료 ➔ 메인 가공 및 살균 ➔ 여과 ➔ 무균 포장(포장지 멸균) ➔ 완제품 출하]까지의 **'전체 공정 흐름(End-to-End)과 이와 연계된 모든 중요관리점(CCP)'**을 빠짐없이 포괄적으로 찾아내어 리포트에 포함시키시오."""
                     res_A = base_model.generate_content(prompt_A).text
                     
-                    # ---------- Agent B: 사내 규정 교차 검증 (2트랙 스위칭) ----------
-                    st.write("⚖️ **[Agent B]** 사내 규정 및 인증 현황 교차 검증 중...")
+                    # ---------- Agent B: 사내 규정 교차 검증 (범용 트랙 스위칭) ----------
+                    st.write("⚖️ **[Agent B]** 사내 규정 및 End-to-End 인증 현황 교차 검증 중...")
                     prompt_B = f"""[Agent B 임무: 규제 및 매뉴얼 검수관]
                     [현재 아산공장 인증 매핑 팩트]: 지식베이스의 '공장현재인증현황' 참고.
                     
                     [Agent A가 추출한 분석 내용]:
                     {res_A}
                     
-                    임무: 사용자의 질문 성격에 따라 다음 2가지 트랙 중 하나로 검증하시오.
-                    트랙 1 (인증/신제품/공정변경 문의): 질문이 특정 품목의 신규 생산이나 공정 변경에 관한 것이라면, [현재 아산공장 인증 매핑 팩트]와 대조하여 '해당 공정 조합이 존재하는지' 교차 검증하고, 없다면 "신규/변경 인증 절차가 필요하다"고 엄격히 판정하시오.
-                    트랙 2 (일반 규정/지식 문의): 질문이 작업장 온도, 위생, 복장, CIP, 검사 주기 등 일반적인 기준서 내용이라면, 억지로 인증 여부와 엮지 말고 Agent A가 추출한 팩트가 정확한지 확인한 후 그대로 통과(승인)시키시오."""
+                    임무: 메모리에 적재된 마스터 지식베이스 및 실제 HACCP 인증서를 대조하여 다음 트랙 중 하나로 교차 검증하시오.
+                    트랙 1 (인증/신제품/공정 문의): 
+                    - 🚨 [절대 검증 기준]: 사용자가 문의한 제품 및 공정이 실제 사내 인증서의 범위와 정확히 일치하는지 판정하시오.
+                    - 특정 단일 공정(예: 추출, 살균, 여과 등)이 기존 인증 범위에 있더라도, 해당 반제품을 '완제품'으로 출하하기 위해 필수적인 후속 공정(예: 포장지 멸균, 금속검출 등)이 누락되었거나 인증 범위를 벗어난다면, "완제품 생산을 위해서는 해당 후속 공정의 신규/변경 인증(또는 품목제조보고)이 필요하다"고 범용적으로 판정하시오. 특정 제품명에 얽매이지 말고 철저히 '전체 공정의 연속성'을 기준으로 검증할 것.
+                    트랙 2 (일반 규정/지식 문의): 작업장 환경, 위생, 기준서 등 일반적인 내용은 Agent A의 팩트가 정확한지 확인 후 통과시키시오."""
                     res_B = base_model.generate_content(prompt_B).text
                     
-                    # ---------- Agent C: 실무 맞춤형 최종 답변 (다각도/완제품 시각 탑재) ----------
+                    # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
                     st.write("📝 **[Agent C]** 다각도 실무 통찰 반영 답변 생성 중...")
                     
                     history_for_gemini = []
@@ -1157,11 +1165,13 @@ with tab5:
                     [Agent B의 교차검증 판정 결과]:
                     {res_B}
                     
-                    임무: 위 판정 결과를 바탕으로 사용자에게 명확하고 이해하기 쉬운 실무 답변을 작성하시오. 
-                    단, [최고 HACCP 책임자 판정 보고서], 수신/발신/일자 같은 거창한 보고서 양식이나 불필요한 텍스트 기호는 절대 사용하지 마시오. 현업 실무자에게 대화하듯 핵심 결론, 근거, 조치사항만 바로 간결하고 친절하게 답변하시오.
+                    임무: 위 판정 결과를 바탕으로 실무자에게 명확하고 이해하기 쉬운 답변을 작성하시오. 거창한 보고서 양식은 금지하며, 현업 실무자에게 핵심 결론, 근거, 조치사항만 바로 간결하게 전달하시오.
                     
-                    💡 [다각도 통찰 및 제품화 관점 필수]: 
-                    단편적인 답변에 머물지 말고, 다각도로 접근하시오. 사용자가 특정 반제품(예: 원액두유, 배양액 등)이나 단일 공정만 묻더라도, 이를 실제 '최종 완제품'으로 상업화·출하하기 위해 후행되어야 하는 필수 연계 공정(예: 무균 포장지 멸균 CCP, 금속검출, 포장 속도 및 압력 등)과 이에 따른 HACCP 인증 범위 포함 여부, 교차오염 등 규제 리스크까지 포괄적으로 짚어주는 실무적 통찰(Insight)을 반드시 포함하시오."""
+                    💡 [범용적 프로세스 통합 원칙 (절대 규칙)]: 
+                    1. 🚨 **결론부 명확화**: 답변 최상단 첫 줄에 완제품 출하 기준의 최종 결론(조건부 승인, 추가 인증 필요성, 가능 여부 등)을 명확하게 선언하시오.
+                    2. **전체 공정(숲) 제시**: 사용자가 묻는 제품/공정이 '최종 완제품화'되기 위해 거쳐야 하는 전체 공정 흐름(가공 ➔ 살균 ➔ 여과 ➔ 무균포장 등)을 먼저 명확히 요약하시오.
+                    3. **유기적 통합 설명**: 단편적인 공정 설명에 그치지 말고, 추출된 중요관리점(CCP)과 실무 포인트를 생산 순서에 따라 하나의 매끄러운 흐름으로 묶어 설명하시오.
+                    4. **리스크 통찰**: 교차오염, CIP 검증, 규제(품목제조보고) 등 완제품 출하 시 예상되는 실무적 리스크를 종합적으로 짚어주시오."""
                     
                     final_chat = base_model.start_chat(history=history_for_gemini)
                     res_C = final_chat.send_message(prompt_C)
