@@ -11,13 +11,27 @@ import pandas as pd
 import datetime
 import urllib.parse
 import re
+import socket
 from concurrent.futures import ThreadPoolExecutor
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 # ==========================================
-# [0] AI 현장심사 대응 지식베이스 (초정밀 팩트 데이터 1~20 통합본 - 100% 원본 유지)
+# [0] 시스템 픽스 및 타임아웃 방어막
+# ==========================================
+# 💡 프로그램 타이틀 'HACCP Agent'로 변경
+st.set_page_config(page_title="HACCP Agent", page_icon="🛡️", layout="wide")
+socket.setdefaulttimeout(600)
+
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_INSTALLED = True
+except ImportError:
+    PYMUPDF_INSTALLED = False
+
+# ==========================================
+# [0-0] AI 현장심사 대응 지식베이스 (원본 100% 유지)
 # ==========================================
 KNOWLEDGE_BASE = {
     # 1. 작업장 및 환경 관리 기준 (작업장 관리 기준서)
@@ -98,7 +112,7 @@ KNOWLEDGE_BASE = {
     "멸균유CCP1B_우유강화유": "우유, 강화유, 가공유 일부제품의 UHT 한계기준은 멸균온도 135~150℃, 멸균시간 10~14초간입니다. HTST의 경우 72~75℃에서 15초 이상 멸균합니다.",
     "멸균유CCP1B_유크림": "유크림의 살균 한계기준은 92~100℃에서 30초 이상 살균(유량 500 L/hr 이하)하는 것입니다.",
     "멸균유CCP1B_중국조제유": "중국 수출용 조제유(병우유)의 한계기준은 127~130℃에서 15초 이상 살균하는 것입니다.",
-    "멸균유CCP2P_여과": "여과 공정 한계기준은 포장 타입별로 우유류 카톤포장 100Mesh, 병포장 120Mesh, 유크림 80Mesh 여과망을 사용하며, 파 파손 여부를 확인합니다.",
+    "멸균유CCP2P_여과": "여과 공정 한계기준은 포장 타입별로 우유류 카톤포장 100Mesh, 병포장 120Mesh, 유크림 80Mesh 여과망을 사용하며, 파손 여부를 확인합니다.",
 
     # 15. 발효유 제조공정 및 HACCP PLAN (발효유, 농후발효유)
     "발효유배양공정": "배양탱크(6,000L 등)에서 4종의 유산균과 유당분해효소를 접종하여 38~42℃(여름 38℃, 봄/가을 40℃, 겨울 42℃)에서 6~8시간 배양한 후 10℃ 이하(그릭요거트는 30℃)로 냉각합니다.",
@@ -235,8 +249,6 @@ MASTER_DOC_REQUIREMENTS = {
 # ==========================================
 # [1] 시스템 기본 설정 및 상태 초기화
 # ==========================================
-st.set_page_config(page_title="AI 현장심사 포털", page_icon="🛡️", layout="wide")
-
 if "priority_keywords" not in st.session_state: st.session_state.priority_keywords = []
 if "search_done" not in st.session_state: st.session_state.search_done = False
 if "found_files" not in st.session_state: st.session_state.found_files = []
@@ -250,6 +262,10 @@ if "target_folder_key" not in st.session_state: st.session_state.target_folder_k
 if "gw_keyword" not in st.session_state: st.session_state.gw_keyword = ""
 if "auto_db" not in st.session_state: st.session_state.auto_db = []
 if "files_to_scan" not in st.session_state: st.session_state.files_to_scan = []
+
+# 💡 챗봇 대화 기록 상태 초기화
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = [{"role": "assistant", "content": "안녕하세요! 연세유업 아산공장 **HACCP Agent**입니다. 공장 내 위생, 공정, 기준서 등 무엇이든 편하게 물어보세요!"}]
 
 custom_theme_css = """
 <style>
@@ -323,8 +339,15 @@ def is_blacklisted(filename, category_name=""):
 
 def sort_files_smartly(files, priority_keywords, db_list):
     def get_priority_score(filename):
+        ai_keyword = ""
+        for row in db_list:
+            if row.get('파일명') == filename:
+                ai_keyword = str(row.get('키워드', ''))
+                break
+        
         for idx, kw in enumerate(priority_keywords):
-            if kw in filename: return idx
+            if kw in ai_keyword: return idx - 1000 # DB에서 AI가 확정한 키워드와 매칭 시 0순위
+            if kw in filename: return idx # 파일명 매칭은 차순위
         return 999 
 
     def get_expire_date(filename):
@@ -395,6 +418,8 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
                     if not page_token: break
                 
             st.session_state.found_files = all_files
+    else:
+        st.session_state.found_files = []
     
     st.success(f"✅ 정밀 탐색 완료! 연관 문서 {len(st.session_state.found_files)}개 확보.")
 
@@ -429,10 +454,45 @@ def execute_ai_search(query_text=None):
         st.session_state.found_files = all_files
 
 # ==========================================
-# [4] 사이드바 (심사관 퀵 버튼)
+# [4] 사이드바 (심사관 퀵 버튼 및 마스터 캐싱)
 # ==========================================
 with st.sidebar:
-    st.markdown("## 🥛 YONSEI DAIRY\n#### 스마트 HACCP 포털\n---")
+    st.markdown("### 🚀 출근용 시스템 워밍업")
+    st.caption("1일 1회 실행하여 AI 속도와 챗봇 지식을 극대화하세요.")
+    if st.button("마스터 지식베이스 캐싱 (1일 1회)", use_container_width=True):
+        with st.spinner("매뉴얼과 지식베이스를 서버에 통째로 적재 중입니다... (약 30초 소요)"):
+            try:
+                docs_dir = "default_docs"
+                uploaded_laws = []
+                if os.path.exists(docs_dir):
+                    law_files = [os.path.join(docs_dir, f) for f in os.listdir(docs_dir) if f.endswith(".pdf")]
+                    for lf in law_files:
+                        up = genai.upload_file(lf)
+                        while up.state.name == "PROCESSING":
+                            time.sleep(2)
+                            up = genai.get_file(up.name)
+                        uploaded_laws.append(up)
+                
+                kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
+                cache_contents = uploaded_laws + [f"\n\n========================================\n[식품안전 마스터 지식베이스]\n{kb_str}"]
+                
+                sys_prompt = "당신은 연세유업 아산공장 최고 HACCP 및 식품안전 전문가 'HACCP Agent'입니다. 제공된 매뉴얼과 지식베이스를 바탕으로 질문에 즉각적이고 디테일하게 브리핑하십시오."
+                
+                law_cache = genai.caching.CachedContent.create(
+                    model=f"models/{MODEL_NAME}",
+                    display_name="audit_master_cache",
+                    system_instruction=sys_prompt,
+                    contents=cache_contents,
+                    ttl=datetime.timedelta(hours=12)
+                )
+                st.session_state["master_cache_name"] = law_cache.name
+                st.success("✅ 마스터 지식베이스 캐싱 완료! (12시간 유지)")
+            except Exception as e:
+                st.error(f"캐싱 중 오류 발생 (API 키 권한 또는 파일 확인): {e}")
+
+    st.markdown("---")
+
+    st.markdown("## 🥛 YONSEI DAIRY\n#### HACCP Agent\n---")
     
     sidebar_tab1, sidebar_tab2 = st.tabs(["🎯 심사관 모드", "✏️ 수동 검색"])
 
@@ -476,8 +536,8 @@ with st.sidebar:
 # ==========================================
 # [5] 메인 UI 탭 구성
 # ==========================================
-st.markdown("## 🛡️ AI 현장심사 대응 통합 포털")
-tab1, tab2, tab3, tab4 = st.tabs(["🤖 뷰어 및 AI 분석", "📁 탐색기", "🚨 자동 대시보드", "⚙️ DB 자동화(관리자)"])
+st.markdown("## 🛡️ HACCP Agent 통합 포털")
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🤖 뷰어 및 AI 분석", "📁 탐색기", "🚨 자동 대시보드", "⚙️ DB 자동화(관리자)", "💬 HACCP 챗봇"])
 
 # ----------------- TAB 1: 뷰어 -----------------
 with tab1:
@@ -488,6 +548,15 @@ with tab1:
         raw_files = [f for f in st.session_state.found_files if not is_blacklisted(f['name'], keyword)]
         
         db_list = st.session_state.auto_db
+        if st.session_state.priority_keywords and db_list:
+            strict_matched_files = []
+            for f in raw_files:
+                ai_kw = next((str(row.get('키워드', '')) for row in db_list if row.get('파일명') == f['name']), "")
+                if any(req_kw in ai_kw for req_kw in st.session_state.priority_keywords):
+                    strict_matched_files.append(f)
+            if strict_matched_files:
+                raw_files = strict_matched_files
+
         if st.session_state.priority_keywords:
             raw_files = sort_files_smartly(raw_files, st.session_state.priority_keywords, db_list)
         else:
@@ -526,16 +595,22 @@ with tab1:
                         
                         gemini_file = genai.upload_file(path=tmp_doc_path)
                         kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
+                        cache_name = st.session_state.get("master_cache_name")
                         
-                        prompt = f"""
-                        당신은 연세유업 아산공장 HACCP 전문 AI입니다.
-                        [지식베이스]\n{kb_str[:1500]}\n
-                        질문에 답하세요: {st.session_state.search_question}
-                        1. 💡 사내 HACCP 기준
-                        2. 📄 제출 문서 검증 요약
-                        """
-                        model = genai.GenerativeModel(model_name=MODEL_NAME)
-                        res = model.generate_content([gemini_file, prompt])
+                        prompt = f"질문에 답하세요: {st.session_state.search_question}\n1. 💡 사내 HACCP 기준 요약\n2. 📄 방금 업로드된 문서 검증 요약"
+                        
+                        if cache_name:
+                            try:
+                                cache = genai.caching.CachedContent.get(cache_name)
+                                model = genai.GenerativeModel.from_cached_content(cached_content=cache)
+                                res = model.generate_content([gemini_file, prompt])
+                            except Exception as cache_err:
+                                model = genai.GenerativeModel(model_name=MODEL_NAME)
+                                res = model.generate_content([gemini_file, f"[지식베이스]\n{kb_str}\n{prompt}"])
+                        else:
+                            model = genai.GenerativeModel(model_name=MODEL_NAME)
+                            res = model.generate_content([gemini_file, f"[지식베이스]\n{kb_str}\n{prompt}"])
+                            
                         st.session_state.final_briefing = res.text
                     except Exception as e:
                         st.session_state.final_briefing = f"⚠️ 분석 오류가 발생했습니다. (API 확인 요망)\n에러 상세: {e}"
@@ -617,7 +692,6 @@ with tab3:
     st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
     st.caption("※ 마스터 기준표(Top-down)에 따라 전체 필수 서류의 누락 및 갱신 상태를 점검합니다.")
     
-    # auto_db를 딕셔너리로 변환 (빠른 검색용)
     db_dict = {row.get("키워드"): row for row in st.session_state.auto_db if row.get("키워드")}
     
     dashboard_data = []
@@ -736,8 +810,6 @@ with tab4:
                 sheet_service = get_sheets_service()
                 
                 progress_bar = st.progress(0)
-                
-                # 실시간 로그 박스 세팅
                 log_box = st.empty()
                 log_history = []
                 
@@ -752,7 +824,6 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
-                # 탑다운 마스터 매핑 및 동적 1개월 계산 프롬프트
                 prompt = """이 문서의 핵심 제목, 발급일, 만료일(유효기간)을 추출해.
                 
                 [중요: 마스터 키워드 맵핑 규칙]
@@ -848,7 +919,6 @@ with tab4:
                     scan_aborted = True
                 finally:
                     if new_db_entries:
-                        # 스마트 중복 제거 (가장 최신 만료일 하나만 남기기)
                         latest_db_dict = {}
                         for entry in new_db_entries:
                             kw = entry.get("키워드", "")
@@ -893,7 +963,7 @@ with tab4:
                                     valueInputOption="RAW", body=body).execute()
                                     
                                 if scan_aborted:
-                                    st.warning("⚠️ 스캔은 중간에 멈췄지만, 방금 전까지 추출된 '최신' 데이터는 마스터 구글 시트에 안전하게 저장되었습니다!")
+                                    st.warning("⚠️ 스캔은 중간에 멈췄지만, 방금 전까지 추출된 '최신' 데이터는 구글 시트에 안전하게 저장되었습니다!")
                                 else:
                                     st.success(f"🎉 중복 제거 완료! 총 {len(filtered_db_entries)}개의 최신 데이터만 구글 시트 연동이 완료되었습니다! 3번 탭에서 확인하세요.")
                                 update_log(f"✅ 구글 시트 기록 완료! (최종 {len(filtered_db_entries)}개 저장됨)")
@@ -907,3 +977,64 @@ with tab4:
                         st.error(f"⚠️ {len(error_log)}개의 문서 스캔 중 오류가 발생했습니다. 아래에서 확인하세요.")
                         with st.expander("에러 상세 로그 보기"):
                             for err in error_log: st.write(err)
+
+# ----------------- TAB 5: HACCP 챗봇 -----------------
+with tab5:
+    st.markdown("### 💬 HACCP Agent 전문 챗봇")
+    st.caption("사내 기준서 및 HACCP 매뉴얼(캐시)을 완벽히 마스터한 AI에게 궁금한 점을 자유롭게 질문하세요.")
+    
+    # 이전 대화 내역 출력
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
+    # 사용자 입력란
+    if prompt := st.chat_input("HACCP 관련 질문을 입력하세요 (예: 유액멸균 CCP 한계기준이 뭐야?)"):
+        # 사용자 메시지 화면에 표시 및 저장
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+            
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            with st.spinner("지식베이스 및 매뉴얼 확인 중..."):
+                try:
+                    kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
+                    cache_name = st.session_state.get("master_cache_name")
+                    
+                    # Gemini Chat API에 맞게 이전 대화 내역 포맷팅
+                    history_for_gemini = []
+                    for m in st.session_state.chat_messages[:-1]:
+                        if m["role"] == "assistant":
+                            if "안녕하세요!" in m["content"]: continue
+                            history_for_gemini.append({"role": "model", "parts": [m["content"]]})
+                        else:
+                            history_for_gemini.append({"role": "user", "parts": [m["content"]]})
+                    
+                    if cache_name:
+                        try:
+                            cache = genai.caching.CachedContent.get(cache_name)
+                            model = genai.GenerativeModel.from_cached_content(cached_content=cache)
+                            chat = model.start_chat(history=history_for_gemini)
+                            res = chat.send_message(prompt)
+                            full_response = res.text
+                        except Exception as cache_err:
+                            # 캐시 만료/소멸 시 일반 지식베이스로 폴백
+                            sys_prompt = "당신은 연세유업 아산공장의 최고 HACCP 및 식품안전 전문가 'HACCP Agent'입니다. 제공된 매뉴얼과 지식베이스를 바탕으로 답변하십시오."
+                            model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=sys_prompt)
+                            chat = model.start_chat(history=history_for_gemini)
+                            res = chat.send_message(f"[필수 지식베이스]\n{kb_str}\n\n사용자 질문: {prompt}")
+                            full_response = res.text
+                    else:
+                        sys_prompt = "당신은 연세유업 아산공장의 최고 HACCP 및 식품안전 전문가 'HACCP Agent'입니다. 제공된 매뉴얼과 지식베이스를 바탕으로 답변하십시오."
+                        model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=sys_prompt)
+                        chat = model.start_chat(history=history_for_gemini)
+                        res = chat.send_message(f"[필수 지식베이스]\n{kb_str}\n\n사용자 질문: {prompt}")
+                        full_response = res.text
+                        
+                    message_placeholder.markdown(full_response)
+                    st.session_state.chat_messages.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    err_msg = f"⚠️ 챗봇 응답 중 오류가 발생했습니다: {e}"
+                    message_placeholder.error(err_msg)
+                    st.session_state.chat_messages.append({"role": "assistant", "content": err_msg})
