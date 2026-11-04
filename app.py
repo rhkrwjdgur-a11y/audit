@@ -20,7 +20,6 @@ from googleapiclient.http import MediaIoBaseDownload
 # ==========================================
 # [0] 시스템 픽스 및 타임아웃 방어막
 # ==========================================
-# 💡 프로그램 타이틀 'HACCP Agent'로 변경
 st.set_page_config(page_title="HACCP Agent", page_icon="🛡️", layout="wide")
 socket.setdefaulttimeout(600)
 
@@ -53,7 +52,7 @@ KNOWLEDGE_BASE = {
     # 4. 이물 관리 기준 (이물 관리 기준서)
     "이물예방": "유리, 플라스틱, 목재, 금속 등 이물질 혼입을 방지하기 위해 스냅형 칼(커터칼), 스테이플러, 압정, 핀, 클립, 철수세미의 작업장 반입을 전면 금지합니다. 유리 제품은 가능한 다른 재질로 대체하거나 보호 처리해야 합니다. 테이프는 포장실 등 지정된 장소에서만 사용 가능합니다.",
     "이물발생조치": "생산 중 이물 발견 시 즉시 생산을 중단하고 과(팀)장에게 보고합니다. 이물 및 선별된 원료는 격리 보관하며, 원인 분석 후 '부적합보고서' 또는 '시정조치요구대책서'를 발행하여 개선합니다.",
-    "이물보관": "소비자로부터 클레임 접수된 이물 신고 내용은 2년간 보관합니다. 소비자가 제시한 이물 실물과 증거품(사진 등)은 6개월간 보관하는 것이 원칙이나, 부패·변질 우려가 있는 경우 2개월간 보관할 수 있습니다.",
+    "이물보관": "소비자로부터 클레임 접수된 이물 신고 내용은 2년간 보관합니다. 소비자가 제시한 이물 실물과 증거품(사진 등)은 6개월간 보관하는 것이 원칙이나, 부패 우려가 있는 경우 2개월간 보관할 수 있습니다.",
     "칼가위관리": "생산 구역에서 사용되는 칼과 가위는 회사가 지급, 식별, 등록한(번호 부여) 물품만 사용해야 합니다. 개인 사물함이나 칼집에 보관해서는 안 되며 임시 보관만 가능합니다. 시작 및 종료 시 상태 점검을 실시해야 합니다.",
 
     # 5. 알러겐 관리 기준 (알러겐 관리 기준서)
@@ -291,7 +290,8 @@ st.markdown(custom_theme_css, unsafe_allow_html=True)
 # ==========================================
 # [2] API 인증 및 서비스 
 # ==========================================
-MODEL_NAME = "models/gemini-3.8-flash"
+# 💡 [버그 픽스] 캐싱 API가 완벽하게 지원되는 정식 버전으로 고정
+MODEL_NAME = "models/gemini-1.5-flash-001" 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
 try:
@@ -478,8 +478,9 @@ with st.sidebar:
                 
                 sys_prompt = "당신은 연세유업 아산공장 최고 HACCP 및 식품안전 전문가 'HACCP Agent'입니다. 제공된 매뉴얼과 지식베이스를 바탕으로 질문에 즉각적이고 디테일하게 브리핑하십시오."
                 
+                # 💡 [핵심 픽스] model=MODEL_NAME 단일 변수로 지정 (models/ 중복 방지)
                 law_cache = genai.caching.CachedContent.create(
-                    model=f"models/{MODEL_NAME}",
+                    model=MODEL_NAME,
                     display_name="audit_master_cache",
                     system_instruction=sys_prompt,
                     contents=cache_contents,
@@ -983,14 +984,11 @@ with tab5:
     st.markdown("### 💬 HACCP Agent 전문 챗봇")
     st.caption("사내 기준서 및 HACCP 매뉴얼(캐시)을 완벽히 마스터한 AI에게 궁금한 점을 자유롭게 질문하세요.")
     
-    # 이전 대화 내역 출력
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             
-    # 사용자 입력란
     if prompt := st.chat_input("HACCP 관련 질문을 입력하세요 (예: 유액멸균 CCP 한계기준이 뭐야?)"):
-        # 사용자 메시지 화면에 표시 및 저장
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -1002,7 +1000,6 @@ with tab5:
                     kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
                     cache_name = st.session_state.get("master_cache_name")
                     
-                    # Gemini Chat API에 맞게 이전 대화 내역 포맷팅
                     history_for_gemini = []
                     for m in st.session_state.chat_messages[:-1]:
                         if m["role"] == "assistant":
@@ -1019,7 +1016,6 @@ with tab5:
                             res = chat.send_message(prompt)
                             full_response = res.text
                         except Exception as cache_err:
-                            # 캐시 만료/소멸 시 일반 지식베이스로 폴백
                             sys_prompt = "당신은 연세유업 아산공장의 최고 HACCP 및 식품안전 전문가 'HACCP Agent'입니다. 제공된 매뉴얼과 지식베이스를 바탕으로 답변하십시오."
                             model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=sys_prompt)
                             chat = model.start_chat(history=history_for_gemini)
