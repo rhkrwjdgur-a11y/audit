@@ -29,8 +29,10 @@ try:
 except ImportError:
     PYMUPDF_INSTALLED = False
 
+CACHE_META_FILE = "haccp_agent_cache.json"
+
 # ==========================================
-# [0-0] AI 현장심사 대응 지식베이스 (매트릭스 교차검증 팩트 주입)
+# [0-0] AI 현장심사 대응 지식베이스 (범용 매트릭스 교차검증 팩트 주입)
 # ==========================================
 KNOWLEDGE_BASE = {
     # 💡 [다중 에이전트 핵심 판단 기준] 우리 공장의 전체 인증 팩트 및 예외 매핑
@@ -242,6 +244,17 @@ MASTER_DOC_REQUIREMENTS = {
 # ==========================================
 # [1] 상태 초기화 및 커스텀 디자인
 # ==========================================
+# 💡 [캐시 영구 보존 로직 추가] F5(새로고침) 후에도 로컬 기록 파일에서 캐시 ID 자동 복원
+if "master_cache_name" not in st.session_state:
+    if os.path.exists(CACHE_META_FILE):
+        try:
+            with open(CACHE_META_FILE, "r") as f:
+                cache_data = json.load(f)
+                if time.time() - cache_data.get("timestamp", 0) < 11.5 * 3600:
+                    st.session_state["master_cache_name"] = cache_data["name"]
+        except:
+            pass
+
 if "priority_keywords" not in st.session_state: st.session_state.priority_keywords = []
 if "search_done" not in st.session_state: st.session_state.search_done = False
 if "found_files" not in st.session_state: st.session_state.found_files = []
@@ -479,7 +492,12 @@ def execute_deep_search(query_text):
 with st.sidebar:
     st.markdown("### 🚀 출근용 시스템 워밍업")
     st.caption("1일 1회 실행하여 AI 속도를 극대화하세요.")
-    if st.button("마스터 지식베이스 캐싱 (1일 1회)", use_container_width=True):
+    
+    # 💡 [캐시 유지 UI 피드백] 이미 파일로 캐시를 살려왔다면 초록색 체크마크 띄우기
+    if st.session_state.get("master_cache_name"):
+        st.success("✅ 마스터 지식베이스 캐시가 활성화되어 있습니다. (API 호출 불필요)")
+        
+    if st.button("마스터 지식베이스 캐싱 (1일 1회 갱신)", use_container_width=True):
         with st.spinner("default_docs 폴더의 매뉴얼을 서버에 적재 중입니다... (최초 1회 약 30초 소요)"):
             try:
                 docs_dir = "default_docs"
@@ -504,6 +522,11 @@ with st.sidebar:
                     ttl=datetime.timedelta(hours=12)
                 )
                 st.session_state["master_cache_name"] = law_cache.name
+                
+                # 💡 [캐시 ID 로컬 파일 저장 로직] 새로고침 대비
+                with open(CACHE_META_FILE, "w") as f:
+                    json.dump({"name": law_cache.name, "timestamp": time.time()}, f)
+                    
                 st.success("✅ 마스터 지식베이스 캐싱 완료! (12시간 유지)")
             except Exception as e:
                 st.error(f"캐싱 중 오류 발생 (API 키 권한 또는 파일 확인): {e}")
@@ -653,7 +676,7 @@ with tab1:
 
             col1, col2 = st.columns([2, 1])
             with col1:
-                st.markdown(f"🔗 **[원본 뷰어 새창에서 열기 (Ctrl+F 로 하이라이트 검색)]({st.session_state.view_url})**")
+                st.markdown(f"🔗 **[원본 뷰어 새창 열기 (Ctrl+F 검색)]({st.session_state.view_url})**")
                 st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
             with col2:
                 st.write("🤖 **AI 브리핑 결과:**")
@@ -1083,7 +1106,8 @@ with tab5:
                     res_B = base_model.generate_content(prompt_B).text
                     
                     # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
-                    st.write("📝 **[Agent C]** 실무진 맞춤형 답변 생성 중...")
+                    # 💡 [핵심 강화] 완제품 시각(End-to-End) 다각도 통찰 규칙 추가
+                    st.write("📝 **[Agent C]** 다각도 실무 통찰 반영 답변 생성 중...")
                     
                     history_for_gemini = []
                     for m in st.session_state.chat_messages[:-1]:
@@ -1098,7 +1122,10 @@ with tab5:
                     {res_B}
                     
                     임무: 위 판정 결과를 바탕으로 사용자에게 명확하고 이해하기 쉬운 실무 답변을 작성하시오. 
-                    단, [최고 HACCP 책임자 판정 보고서], 수신/발신/일자 같은 거창한 보고서 양식이나 불필요한 텍스트 기호는 절대 사용하지 마시오. 현업 실무자에게 대화하듯 핵심 결론, 근거, 조치사항만 바로 간결하고 친절하게 답변하시오."""
+                    단, [최고 HACCP 책임자 판정 보고서], 수신/발신/일자 같은 거창한 보고서 양식이나 불필요한 텍스트 기호는 절대 사용하지 마시오. 현업 실무자에게 대화하듯 핵심 결론, 근거, 조치사항만 바로 간결하고 친절하게 답변하시오.
+                    
+                    💡 [다각도 통찰 및 제품화 관점 필수]: 
+                    단편적인 답변에 머물지 말고, 다각도로 접근하시오. 사용자가 특정 반제품(예: 원액두유, 배양액 등)이나 단일 공정만 묻더라도, 이를 실제 '최종 완제품'으로 상업화·출하하기 위해 후행되어야 하는 필수 연계 공정(예: 무균 포장지 멸균 CCP, 금속검출, 포장 속도 및 압력 등)과 이에 따른 HACCP 인증 범위 포함 여부, 교차오염 등 규제 리스크까지 포괄적으로 짚어주는 실무적 통찰(Insight)을 반드시 포함하시오."""
                     
                     final_chat = base_model.start_chat(history=history_for_gemini)
                     res_C = final_chat.send_message(prompt_C)
