@@ -155,7 +155,7 @@ KNOWLEDGE_BASE = {
     "환자용식품CCP3B_포장지멸균": "테트라팩은 과산화수소 농도 32~50% 또는 eBeam 전류값 95~105%로, 콤비블럭은 과산화수소 온도 250~290℃, 분사량 350~450μl/s로 포장지를 멸균하며 이탈된 제품은 즉각 폐기 조치합니다.",
 
     # 20. 작업장 평면도 및 동선 관리
-    "작업장동선및레이아웃": "작업장 평면도에 따르면 작업자 이동 경로(녹색), 폐수 이동 경로(청색), 원유 이송 흐름도(분홍색), 탱크로리 CIP 흐름도(보라색)가 명확히 분리되어 교차오염을 방지하고 있습니다. 주요 구역은 수유실, 수유 검사실, 원유취급실, 우유 가공, 발효유 가공 구역 등으로 철저히 구획되어 있습니다."
+    "작업장동선및레이아웃": "작업장 평면도에 따르면 작업자 이동 경로(녹색), 폐수 이동 경로(청색), 원유 이송 흐름도(분홍색), 탱크로리 CIP 흐름도(보라색)가 명확히 분리되어 교차오염을 방지하고 있습니다. 주요 구역은 수유실, 수유 검사실, 원유취급실, 우유 가공, 발효유 가공 구역 등으로 철저히 구획되어 정밀 통제됩니다."
 }
 
 # ==========================================
@@ -244,7 +244,7 @@ MASTER_DOC_REQUIREMENTS = {
 # ==========================================
 # [1] 상태 초기화 및 커스텀 디자인
 # ==========================================
-# 💡 [캐시 영구 보존 로직 추가] F5(새로고침) 후에도 로컬 기록 파일에서 캐시 ID 자동 복원
+# 💡 [캐시 영구 보존 로직] F5(새로고침) 후에도 로컬 기록 파일에서 캐시 ID 자동 복원
 if "master_cache_name" not in st.session_state:
     if os.path.exists(CACHE_META_FILE):
         try:
@@ -270,7 +270,7 @@ if "auto_db" not in st.session_state: st.session_state.auto_db = []
 if "files_to_scan" not in st.session_state: st.session_state.files_to_scan = []
 
 if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = [{"role": "assistant", "content": "안녕하세요! 공장 내 위생, 공정, 기준서 등 궁금하신 점을 말씀해주시면, 사내 규정과 현재 인증 스펙을 교차 검증하여 빠르고 간결하게 답변해 드립니다."}]
+    st.session_state.chat_messages = [{"role": "assistant", "content": "안녕하세요! 공장 내 위생, 공정, 기준서 등 궁금하신 점을 말씀해주시면, 사내 규정과 현재 인증 스펙을 다각도로 교차 검증하여 빠르고 정확하게 답변해 드립니다."}]
 
 custom_theme_css = """
 <style>
@@ -493,43 +493,80 @@ with st.sidebar:
     st.markdown("### 🚀 출근용 시스템 워밍업")
     st.caption("1일 1회 실행하여 AI 속도를 극대화하세요.")
     
-    # 💡 [캐시 유지 UI 피드백] 이미 파일로 캐시를 살려왔다면 초록색 체크마크 띄우기
     if st.session_state.get("master_cache_name"):
-        st.success("✅ 마스터 지식베이스 캐시가 활성화되어 있습니다. (API 호출 불필요)")
+        st.success("✅ 마스터 지식베이스 캐시가 활성화되어 있습니다. (새로고침 방어 완료)")
         
     if st.button("마스터 지식베이스 캐싱 (1일 1회 갱신)", use_container_width=True):
-        with st.spinner("default_docs 폴더의 매뉴얼을 서버에 적재 중입니다... (최초 1회 약 30초 소요)"):
-            try:
-                docs_dir = "default_docs"
-                uploaded_laws = []
-                if os.path.exists(docs_dir):
-                    law_files = [os.path.join(docs_dir, f) for f in os.listdir(docs_dir) if f.endswith(".pdf")]
-                    for lf in law_files:
-                        up = genai.upload_file(lf)
-                        while up.state.name == "PROCESSING":
-                            time.sleep(2)
-                            up = genai.get_file(up.name)
-                        uploaded_laws.append(up)
-                
-                kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
-                cache_contents = uploaded_laws + [f"\n\n========================================\n[식품안전 마스터 지식베이스]\n{kb_str}"]
-                
-                law_cache = genai.caching.CachedContent.create(
-                    model=MODEL_NAME, 
-                    display_name="audit_master_cache",
-                    system_instruction="당신은 최고 수준의 데이터를 처리하는 백그라운드 엔진입니다.",
-                    contents=cache_contents,
-                    ttl=datetime.timedelta(hours=12)
-                )
-                st.session_state["master_cache_name"] = law_cache.name
-                
-                # 💡 [캐시 ID 로컬 파일 저장 로직] 새로고침 대비
-                with open(CACHE_META_FILE, "w") as f:
-                    json.dump({"name": law_cache.name, "timestamp": time.time()}, f)
+        drive_service = get_drive_service()
+        if not drive_service:
+            st.error("구글 드라이브 API 인증에 실패했습니다.")
+        else:
+            with st.spinner("구글 드라이브 지정 폴더(인증서/기준서/선행요건/FSSC)에서 최신 매뉴얼을 적재 중입니다..."):
+                try:
+                    uploaded_laws = []
                     
-                st.success("✅ 마스터 지식베이스 캐싱 완료! (12시간 유지)")
-            except Exception as e:
-                st.error(f"캐싱 중 오류 발생 (API 키 권한 또는 파일 확인): {e}")
+                    # 💡 [핵심 최적화] 방문심사 전체가 아닌 챗봇에 꼭 필요한 핵심 4개 폴더만 타겟팅하여 최신본 추출
+                    target_keys = ["인증서", "기준서", "선행요건", "FSSC22000"]
+                    all_target_fids = []
+                    for k in target_keys:
+                        if FLAT_FOLDER_DB.get(k) and not FLAT_FOLDER_DB[k].startswith("folder_id_"):
+                            all_target_fids.extend(get_target_folder_ids(drive_service, FLAT_FOLDER_DB[k]))
+                    
+                    drive_pdfs = []
+                    for fid in set(all_target_fids):
+                        pt = None
+                        while True:
+                            res = drive_service.files().list(
+                                q=f"'{fid}' in parents and mimeType='application/pdf' and trashed=false",
+                                fields="nextPageToken, files(id, name, modifiedTime)",
+                                pageSize=1000, pageToken=pt
+                            ).execute()
+                            drive_pdfs.extend(res.get('files', []))
+                            pt = res.get('nextPageToken')
+                            if not pt: break
+                    
+                    # 최신 수정일 기준으로 정렬하여 가장 유효한 최신 데이터 확보
+                    drive_pdfs.sort(key=lambda x: x.get('modifiedTime', ''), reverse=True)
+                    
+                    # 안정적인 API 호출을 위해 최신 30개로 한정 (핵심 법령 및 인증서 위주)
+                    target_pdfs = drive_pdfs[:30]
+                    cache_progress = st.progress(0)
+                    
+                    for i, pf in enumerate(target_pdfs):
+                        try:
+                            file_bytes = download_file_bytes(drive_service, pf['id'])
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                                tmp.write(file_bytes)
+                                tmp_path = tmp.name
+                            
+                            up = genai.upload_file(tmp_path, display_name=pf['name'])
+                            while up.state.name == "PROCESSING":
+                                time.sleep(2)
+                                up = genai.get_file(up.name)
+                            uploaded_laws.append(up)
+                            os.remove(tmp_path)
+                        except:
+                            pass
+                        cache_progress.progress((i + 1) / len(target_pdfs))
+                    
+                    kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
+                    cache_contents = uploaded_laws + [f"\n\n========================================\n[식품안전 마스터 지식베이스]\n{kb_str}"]
+                    
+                    law_cache = genai.caching.CachedContent.create(
+                        model=MODEL_NAME, 
+                        display_name="audit_master_cache",
+                        system_instruction="당신은 최고 수준의 데이터를 처리하는 백그라운드 엔진입니다.",
+                        contents=cache_contents,
+                        ttl=datetime.timedelta(hours=12)
+                    )
+                    st.session_state["master_cache_name"] = law_cache.name
+                    
+                    with open(CACHE_META_FILE, "w") as f:
+                        json.dump({"name": law_cache.name, "timestamp": time.time()}, f)
+                        
+                    st.success("✅ 구글 드라이브 핵심 폴더(인증서/기준서) 기반 최신 캐싱 완료! (12시간 유지)")
+                except Exception as e:
+                    st.error(f"드라이브 캐싱 중 오류 발생: {e}")
                 
     st.markdown("---")
     
@@ -676,7 +713,7 @@ with tab1:
 
             col1, col2 = st.columns([2, 1])
             with col1:
-                st.markdown(f"🔗 **[원본 뷰어 새창 열기 (Ctrl+F 검색)]({st.session_state.view_url})**")
+                st.markdown(f"🔗 **[원본 뷰어 새창에서 열기 (Ctrl+F 로 하이라이트 검색)]({st.session_state.view_url})**")
                 st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
             with col2:
                 st.write("🤖 **AI 브리핑 결과:**")
@@ -1105,8 +1142,7 @@ with tab5:
                     트랙 2 (일반 규정/지식 문의): 질문이 작업장 온도, 위생, 복장, CIP, 검사 주기 등 일반적인 기준서 내용이라면, 억지로 인증 여부와 엮지 말고 Agent A가 추출한 팩트가 정확한지 확인한 후 그대로 통과(승인)시키시오."""
                     res_B = base_model.generate_content(prompt_B).text
                     
-                    # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
-                    # 💡 [핵심 강화] 완제품 시각(End-to-End) 다각도 통찰 규칙 추가
+                    # ---------- Agent C: 실무 맞춤형 최종 답변 (다각도/완제품 시각 탑재) ----------
                     st.write("📝 **[Agent C]** 다각도 실무 통찰 반영 답변 생성 중...")
                     
                     history_for_gemini = []
