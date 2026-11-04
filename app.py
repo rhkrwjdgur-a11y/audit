@@ -1037,12 +1037,10 @@ with tab5:
     st.markdown("### 💬 HACCP Multi-Agent 전문 챗봇")
     st.caption("단일 AI의 환각을 방지하기 위해 3명의 AI(추출 ➔ 검증 ➔ 답변)가 릴레이로 협업하여 완벽한 규제 판정을 내립니다.")
     
-    # 이전 대화 내역 출력
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             
-    # 사용자 질문 입력
     if prompt := st.chat_input("HACCP 관련 질문을 입력하세요 (예: 멸균 공정을 새로 추가하려는데 어떻게 해야 해?)"):
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -1056,7 +1054,6 @@ with tab5:
                     kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
                     cache_name = st.session_state.get("master_cache_name")
                     
-                    # 캐시 여부에 따라 베이스 모델 설정
                     if cache_name:
                         try:
                             cache = genai.caching.CachedContent.get(cache_name)
@@ -1073,18 +1070,18 @@ with tab5:
                     사용자의 질문과 관련된 우리 공장의 핵심 공정(온도, 시간, 설비 등)과 지식베이스 상의 팩트를 요약하여 객관적인 리포트를 작성하시오."""
                     res_A = base_model.generate_content(prompt_A).text
                     
+                    # 💡 [핵심 강화] 2트랙 분기점을 통한 범용성 확보
                     # ---------- Agent B: 사내 규정 교차 검증 (범용 매트릭스 확인) ----------
-                    # 💡 [핵심 강화] 특정 단어를 뺀 범용 매핑 비교 프롬프트 적용
-                    st.write("⚖️ **[Agent B]** 사내 현재 인증 현황(Matrix) 1:1 교차 검증 중...")
-                    prompt_B = f"""[Agent B 임무: 규제 검수관]
-                    [현재 아산공장 인증 매핑 팩트]: 지식베이스의 '공장현재인증현황'에 명시된 품목과 공정 매핑표를 기준으로 삼으시오.
+                    st.write("⚖️ **[Agent B]** 사내 규정 및 인증 현황 교차 검증 중...")
+                    prompt_B = f"""[Agent B 임무: 규제 및 매뉴얼 검수관]
+                    [현재 아산공장 인증 매핑 팩트]: 지식베이스의 '공장현재인증현황' 참고.
                     
                     [Agent A가 추출한 분석 내용]:
                     {res_A}
                     
-                    임무: 공장 팩트 매핑표와 Agent A의 분석 내용을 1:1로 엄격하게 대조하시오. 
-                    사용자가 특정 품목(예: 우유, 주스, 발효유 등 어떤 것이든)의 공정 변경이나 신규 생산을 문의할 때, 해당 '품목'과 '제조공정'의 조합이 아산공장 인증 매핑표에 정확히 존재하는지 교차 검증하시오. 
-                    만약 매핑표에 없는 새로운 공정을 도입하거나 교차 생산하려는 의도가 확인되면, "해당 공정 조합은 현재 HACCP 인증에 없으므로 위해요소 재분석 및 신규(변경) 인증 절차가 반드시 필요하다"고 범용적으로 정확하게 판정하시오."""
+                    임무: 사용자의 질문 성격에 따라 다음 2가지 트랙 중 하나로 검증하시오.
+                    트랙 1 (인증/신제품/공정변경 문의): 질문이 특정 품목의 신규 생산이나 공정 변경에 관한 것이라면, [현재 아산공장 인증 매핑 팩트]와 대조하여 '해당 공정 조합이 존재하는지' 교차 검증하고, 없다면 "신규/변경 인증 절차가 필요하다"고 엄격히 판정하시오.
+                    트랙 2 (일반 규정/지식 문의): 질문이 작업장 온도, 위생, 복장, CIP, 검사 주기 등 일반적인 기준서 내용이라면, 억지로 인증 여부와 엮지 말고 Agent A가 추출한 팩트가 정확한지 확인한 후 그대로 통과(승인)시키시오."""
                     res_B = base_model.generate_content(prompt_B).text
                     
                     # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
@@ -1111,7 +1108,6 @@ with tab5:
                     
                     status.update(label="✅ 에이전트 협업 분석 완료!", state="complete", expanded=False)
                     
-                    # 최종 답변 출력 및 세션 저장
                     message_placeholder.markdown(full_response)
                     st.session_state.chat_messages.append({"role": "assistant", "content": full_response})
                     
