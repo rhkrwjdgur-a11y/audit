@@ -261,6 +261,7 @@ st.markdown(custom_theme_css, unsafe_allow_html=True)
 # ==========================================
 # [2] API 인증 및 서비스 
 # ==========================================
+# 💡 [주임님 지시사항 반영] Gemini 3.8 모델 버전 확정
 MODEL_NAME = "models/gemini-3.8-flash"
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
@@ -458,69 +459,64 @@ with st.sidebar:
         drive_service = get_drive_service()
         if not drive_service:
             st.error("구글 드라이브 API 인증에 실패했습니다.")
+        elif not st.session_state.auto_db:
+            st.warning("⚠️ 캐싱 전, 우측 메인 화면의 [3. 🚨 탑다운 대시보드] 탭을 한 번 눌러 구글 시트 최신 DB를 동기화해주세요!")
         else:
-            with st.spinner("구글 드라이브 지정 폴더(인증서/기준서/선행요건/FSSC)에서 최신 매뉴얼을 적재 중입니다..."):
+            with st.spinner("구글 시트 DB에 등록된 '최신본' 매뉴얼 및 인증서만 핀셋 선별하여 적재 중입니다..."):
                 try:
                     uploaded_laws = []
+                    target_pdfs = []
                     
-                    target_keys = ["인증서", "기준서", "선행요건", "FSSC22000"]
-                    all_target_fids = []
-                    for k in target_keys:
-                        if FLAT_FOLDER_DB.get(k) and not FLAT_FOLDER_DB[k].startswith("folder_id_"):
-                            all_target_fids.extend(get_target_folder_ids(drive_service, FLAT_FOLDER_DB[k]))
+                    # 💡 [핵심 해결 로직] 폴더 내 126만 토큰 분량의 전체 과거 파일을 뒤지지 않고, 
+                    # 구글 시트에 살아남은 '최신 유효 파일' 중 기준서 및 인증서류만 핀셋 추출합니다.
+                    for row in st.session_state.auto_db:
+                        kw = row.get("키워드", "")
+                        # PASS(일반 매뉴얼) 또는 인증서, HACCP, FSSC 관련 키워드만 캐싱 대상으로 선별
+                        if kw == "PASS" or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
+                            fid = row.get("파일 ID")
+                            fname = row.get("문서_실제제목") or row.get("파일명")
+                            if fid:
+                                target_pdfs.append({"id": fid, "name": fname})
                     
-                    drive_pdfs = []
-                    for fid in set(all_target_fids):
-                        pt = None
-                        while True:
-                            res = drive_service.files().list(
-                                q=f"'{fid}' in parents and mimeType='application/pdf' and trashed=false",
-                                fields="nextPageToken, files(id, name, modifiedTime)",
-                                pageSize=1000, pageToken=pt
-                            ).execute()
-                            drive_pdfs.extend(res.get('files', []))
-                            pt = res.get('nextPageToken')
-                            if not pt: break
-                    
-                    drive_pdfs.sort(key=lambda x: x.get('modifiedTime', ''), reverse=True)
-                    
-                    # 💡 파일 개수 제한 해제
-                    target_pdfs = drive_pdfs
-                    cache_progress = st.progress(0)
-                    
-                    for i, pf in enumerate(target_pdfs):
-                        try:
-                            file_bytes = download_file_bytes(drive_service, pf['id'])
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                                tmp.write(file_bytes)
-                                tmp_path = tmp.name
-                            
-                            up = genai.upload_file(tmp_path, display_name=pf['name'])
-                            while up.state.name == "PROCESSING":
-                                time.sleep(2)
-                                up = genai.get_file(up.name)
-                            uploaded_laws.append(up)
-                            os.remove(tmp_path)
-                        except:
-                            pass
-                        cache_progress.progress((i + 1) / len(target_pdfs))
-                    
-                    kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
-                    cache_contents = uploaded_laws + [f"\n\n========================================\n[식품안전 마스터 지식베이스]\n{kb_str}"]
-                    
-                    law_cache = genai.caching.CachedContent.create(
-                        model=MODEL_NAME, 
-                        display_name="audit_master_cache",
-                        system_instruction="당신은 최고 수준의 데이터를 처리하는 백그라운드 엔진입니다.",
-                        contents=cache_contents,
-                        ttl=datetime.timedelta(hours=12)
-                    )
-                    st.session_state["master_cache_name"] = law_cache.name
-                    
-                    with open(CACHE_META_FILE, "w") as f:
-                        json.dump({"name": law_cache.name, "timestamp": time.time()}, f)
+                    if not target_pdfs:
+                        st.warning("⚠️ 캐싱할 최신 문서가 DB에 없습니다. 4번 탭에서 스캔 및 저장을 먼저 진행해주세요.")
+                    else:
+                        cache_progress = st.progress(0)
                         
-                    st.success("✅ 구글 드라이브 핵심 폴더 기반 최신 캐싱 완료! (12시간 유지)")
+                        for i, pf in enumerate(target_pdfs):
+                            try:
+                                file_bytes = download_file_bytes(drive_service, pf['id'])
+                                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                                    tmp.write(file_bytes)
+                                    tmp_path = tmp.name
+                                
+                                up = genai.upload_file(tmp_path, display_name=pf['name'])
+                                while up.state.name == "PROCESSING":
+                                    time.sleep(2)
+                                    up = genai.get_file(up.name)
+                                uploaded_laws.append(up)
+                                os.remove(tmp_path)
+                            except Exception as inner_e:
+                                st.write(f"개별 파일 로드 실패 ({pf['name']}): {inner_e}")
+                                pass
+                            cache_progress.progress((i + 1) / len(target_pdfs))
+                        
+                        kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
+                        cache_contents = uploaded_laws + [f"\n\n========================================\n[식품안전 마스터 지식베이스]\n{kb_str}"]
+                        
+                        law_cache = genai.caching.CachedContent.create(
+                            model=MODEL_NAME, 
+                            display_name="audit_master_cache",
+                            system_instruction="당신은 최고 수준의 데이터를 처리하는 백그라운드 엔진입니다.",
+                            contents=cache_contents,
+                            ttl=datetime.timedelta(hours=12)
+                        )
+                        st.session_state["master_cache_name"] = law_cache.name
+                        
+                        with open(CACHE_META_FILE, "w") as f:
+                            json.dump({"name": law_cache.name, "timestamp": time.time()}, f)
+                            
+                        st.success(f"✅ 구글 시트 기반 정예 문서({len(target_pdfs)}개) 최적화 캐싱 완료! (12시간 유지)")
                 except Exception as e:
                     st.error(f"드라이브 캐싱 중 오류 발생: {e}")
                 
@@ -538,7 +534,6 @@ with st.sidebar:
     with sidebar_tab1:
         st.caption("페이퍼(수기) 일지를 제외한 100% 즉시 증빙 가능한 전산/드라이브 서류 전용 버튼입니다.")
         
-        # 💡 [핵심 업데이트] 심사관의 현장 검증 순서에 맞춘 5단계 레이아웃 및 50여 개 항목의 완벽한 원클릭 매핑
         with st.expander("📁 1. 영업 인허가 및 각종 인증서", expanded=True):
             if st.button("영업신고/공장등록/가설건축물", use_container_width=True): 
                 execute_exact_match("인허가", "인허가 서류", "", [
@@ -1022,17 +1017,24 @@ with tab4:
                     scan_aborted = True
                 finally:
                     if new_db_entries:
+                        # 💡 1. 백지화가 아닌, 기존 시트 DB 데이터를 먼저 불러와서 베이스(기초)로 깐다.
                         latest_db_dict = {}
+                        if st.session_state.auto_db:
+                            for old_row in st.session_state.auto_db:
+                                kw = old_row.get("키워드", "")
+                                if kw and kw != "PASS" and kw in MASTER_DOC_REQUIREMENTS:
+                                    exp_str = str(old_row.get("만료일", ""))
+                                    sort_date = "9999-12-31" if exp_str == "영구" else exp_str
+                                    latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
+                        
+                        # 💡 2. 방금 스캔한 '새로운 데이터'와 경쟁시켜 더 최신본이면 덮어씌운다(업데이트).
                         for entry in new_db_entries:
                             kw = entry.get("키워드", "")
                             if kw == "PASS" or kw not in MASTER_DOC_REQUIREMENTS: 
                                 continue
                             
                             exp_str = str(entry.get("만료일", ""))
-                            if exp_str == "영구": 
-                                sort_date = "9999-12-31" 
-                            else:
-                                sort_date = exp_str
+                            sort_date = "9999-12-31" if exp_str == "영구" else exp_str
                             
                             if kw not in latest_db_dict:
                                 latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
@@ -1040,13 +1042,14 @@ with tab4:
                                 if sort_date > latest_db_dict[kw]["sort_date"]:
                                     latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
 
+                        # 3. 경쟁에서 살아남은(기존 보존 + 신규 업데이트) 최종 데이터를 시트에 저장한다.
                         filtered_db_entries = [v["entry"] for v in latest_db_dict.values()]
                         st.session_state.auto_db = filtered_db_entries
                         
                         if scan_aborted:
-                            update_log("💾 중단점까지 정리된 최신 데이터를 구글 시트에 강제 저장합니다...")
+                            update_log("💾 중단점까지 병합된 최신 데이터를 구글 시트에 강제 저장합니다...")
                         else:
-                            update_log("🎉 모든 분석 완료! 중복을 제거한 최신 데이터를 구글 시트에 저장합니다...")
+                            update_log("🎉 분석 완료! 기존 데이터와 병합된 최신 데이터를 구글 시트에 저장합니다...")
                         
                         if sheet_service and SHEET_ID:
                             try:
@@ -1077,15 +1080,15 @@ with tab4:
                                     valueInputOption="RAW", body=body).execute()
                                     
                                 if scan_aborted:
-                                    st.warning("⚠️ 스캔은 중간에 멈췄지만, 방금 전까지 추출된 '최신' 데이터는 구글 시트에 안전하게 저장되었습니다!")
+                                    st.warning("⚠️ 스캔은 중간에 멈췄지만, 방금 전까지 추출된 데이터는 기존 DB와 안전하게 병합 저장되었습니다!")
                                 else:
-                                    st.success(f"🎉 중복 제거 완료! 총 {len(filtered_db_entries)}개의 최신 메타데이터가 구글 시트에 저장되었습니다! (3번 탭 확인)")
+                                    st.success(f"🎉 스마트 병합 완료! 총 {len(filtered_db_entries)}개의 최신 메타데이터가 구글 시트에 유지/업데이트 되었습니다! (3번 탭 확인)")
                                 update_log(f"✅ 구글 시트 기록 완료! (최종 {len(filtered_db_entries)}개 저장됨)")
                             except Exception as e:
                                 st.error(f"⚠️ 구글 시트 저장 실패 (권한/ID 문제 확인 필요): {e}")
                                 update_log(f"❌ 시트 저장 실패: {e}")
                         else:
-                            st.warning("⚠️ 구글 시트 ID가 없거나 연동되지 않아 세션(임시 메모리)에만 저장되었습니다.")
+                            st.warning("⚠️ 구글 시트 ID가 없거나 연동되지 않아 세션(임시 메모리)에만 병합 저장되었습니다.")
                             
                     if error_log:
                         st.error(f"⚠️ {len(error_log)}개의 문서 스캔 중 오류가 발생했습니다. 아래에서 확인하세요.")
@@ -1137,6 +1140,7 @@ with tab5:
                     
                     # ---------- Agent B: 사내 규정 교차 검증 (범용 트랙 스위칭) ----------
                     st.write("⚖️ **[Agent B]** 사내 규정 및 End-to-End 인증 현황 교차 검증 중...")
+                    
                     prompt_B = f"""[Agent B 임무: 규제 및 매뉴얼 검수관]
                     [현재 아산공장 인증 매핑 팩트]: 지식베이스의 '공장현재인증현황' 참고.
                     
