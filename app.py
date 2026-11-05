@@ -932,8 +932,8 @@ with tab4:
                 def update_log(msg):
                     log_history.append(msg)
                     display_text = "\n".join(log_history[-15:])
-                    # 💡 [핵심 해결] 텍스트 에어리어가 아닌 마크다운(코드) 블록으로 변경하여 Duplicate 에러 완벽 해결!
-                    log_box.markdown(f"**📡 실시간 진행 로그 (최근 내역)**\n```text\n{display_text}\n```")
+                    # 💡 [해결 방안 적용] 위젯 충돌을 일으키는 text_area 대신 안전한 code 블록으로 출력
+                    log_box.code(display_text, language="text")
 
                 error_log = []
                 new_db_entries = []
