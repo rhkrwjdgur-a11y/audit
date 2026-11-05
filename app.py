@@ -169,6 +169,7 @@ MASTER_DOC_REQUIREMENTS = {
     "축산물판매업": {"표시명": "축산물유통전문판매업 신고필증", "주기": 0},
     "건강기능식품영업": {"표시명": "건강기능식품 영업신고증", "주기": 0},
     "통신판매업": {"표시명": "통신판매업신고증", "주기": 0},
+    "방문판매업": {"표시명": "방문판매업신고증", "주기": 0},
     "집단급식소": {"표시명": "집단급식소 설치·운영 신고증", "주기": 0},
     "화장품책임판매": {"표시명": "화장품책임판매업 등록필증", "주기": 0},
     "지하수개발허가": {"표시명": "지하수개발·이용허가서", "주기": 60},
@@ -457,9 +458,10 @@ with st.sidebar:
                     uploaded_laws = []
                     target_pdfs = []
                     
+                    # 💡 [캐싱 최적화] 쓰레기 데이터는 캐싱하지 않고, 정규 인증서와 매뉴얼만 캐싱
                     for row in st.session_state.auto_db:
                         kw = row.get("키워드", "")
-                        if kw == "PASS" or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
+                        if kw == "매뉴얼" or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
                             fid = row.get("파일 ID")
                             fname = row.get("문서_실제제목") or row.get("파일명")
                             if fid:
@@ -529,7 +531,7 @@ with st.sidebar:
             if st.button("영업신고/공장등록/가설건축물", use_container_width=True): 
                 execute_exact_match("인허가", "인허가 서류", "", [
                     "식품제조가공업", "유가공업", "집유업", "사업자등록증", "공장등록증", 
-                    "수입식품영업", "식품소분업", "축산물판매업", "건강기능식품영업", "통신판매업", "집단급식소", "화장품책임판매", "지하수개발허가", "가설건축물"
+                    "수입식품영업", "식품소분업", "축산물판매업", "건강기능식품영업", "통신판매업", "방문판매업", "집단급식소", "화장품책임판매", "지하수개발허가", "가설건축물"
                 ])
             if st.button("HACCP 및 FSSC 인증서", use_container_width=True): 
                 execute_exact_match("인증서", "인증서", "", [
@@ -737,7 +739,7 @@ with tab2:
                     except Exception as e:
                         st.error(f"오류: {e}")
 
-# ----------------- TAB 3: 대시보드 (💡 하이브리드 동적 확장 로직) -----------------
+# ----------------- TAB 3: 대시보드 -----------------
 with tab3:
     st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
     st.caption("※ 마스터 기준표(Top-down)에 따라 전체 필수 전산 서류의 누락 및 갱신 상태를 점검합니다.")
@@ -813,9 +815,9 @@ with tab3:
         
         dashboard_data.append(row_data)
 
-    # 💡 2. 동적 추가 (허가된 접두사로 시작하는 신규 키워드만 엄격히 통과)
+    # 💡 2. 동적 추가 (화면 오염을 방지하기 위해 '기타', '매뉴얼'은 대시보드에서 무시)
     for key, doc in db_dict.items():
-        if key not in processed_keys and key != "PASS" and key.strip() != "":
+        if key not in processed_keys and key not in ("기타", "매뉴얼") and key.strip() != "":
             if key.startswith(allowed_dynamic_prefixes):
                 exp_date_str = str(doc.get("만료일", ""))
                 cycle = str(doc.get("주기(개월)", "24"))
@@ -932,7 +934,6 @@ with tab4:
                 def update_log(msg):
                     log_history.append(msg)
                     display_text = "\n".join(log_history[-15:])
-                    # 💡 [해결 방안 적용] 위젯 충돌을 일으키는 text_area 대신 안전한 code 블록으로 출력
                     log_box.code(display_text, language="text")
 
                 error_log = []
@@ -941,6 +942,7 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
+                # 💡 [핵심 업데이트] AI 프롬프트 아키텍처 대공사 (버리지 말고 모두 저장)
                 prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                 
                 [행동 강령 - 환각 원천 차단]
@@ -948,18 +950,51 @@ with tab4:
                 2. 단순히 파일명이나 단어 몇 개가 겹친다고 성급히 분류하지 마. 발급 기관, 문서 목적, 하단 직인 유무를 종합 분석하여 확신할 때만 마스터 키워드를 부여해.
                 3. 문서 우측 상단이나 하단에 개정번호(Rev.0, Rev.1 등)가 있으면 반드시 추출해.
                 
-                [마스터 키워드 맵핑 규칙]
-                일반적인 서류는 기존 규칙대로 고정된 키워드를 사용해.
+                [마스터 키워드 맵핑 규칙 - 엄수]
+                🚨 아래 정해진 키워드 중 완벽히 일치하는 1개로 변환해서 "키워드" 값에 넣어.
+                - 사업자등록증 -> "사업자등록"
+                - 공장등록증명서 -> "공장등록"
+                - 건축물대장 -> "건축물대장"
+                - 식품제조가공업 관련 영업증/등록증 -> "식품제조가공업"
+                - 축산물가공업/유가공업 허가증 -> "축산물가공업"
+                - 집유업 허가증 -> "집유업"
+                - 수입식품 영업 관련 -> "수입식품영업"
+                - 식품소분판매업, 일반 영업신고증 -> "식품소분업"
+                - 축산물유통전문판매업 -> "축산물판매업"
+                - 건강기능식품 영업/신고증 -> "건강기능식품영업"
+                - 통신판매업신고증 -> "통신판매업"
+                - 방문판매업신고증 -> "방문판매업"
+                - 집단급식소 관련 -> "집단급식소"
+                - 화장품책임판매업 -> "화장품책임판매"
+                - 지하수개발 이용허가서 -> "지하수개발허가"
+                - 식약처 HACCP (가공두유) -> "HACCP_가공두유"
+                - 식약처 HACCP (원액두유) -> "HACCP_원액두유"
+                - 식약처 HACCP (유가공업) -> "HACCP_유가공업"
+                - 식약처 HACCP (과채주스) -> "HACCP_과채주스"
+                - 식약처 HACCP (과채음료) -> "HACCP_과채음료"
+                - 식약처 HACCP (혼합음료) -> "HACCP_혼합음료"
+                - 식약처 HACCP (유산균음료) -> "HACCP_유산균음료"
+                - 식약처 HACCP (커피) -> "HACCP_커피"
+                - 식약처 HACCP (액상차) -> "HACCP_액상차"
+                - 식약처 HACCP (일반환자용/당뇨/암환자 등) -> "HACCP_환자식"
+                - FSSC 22000 -> "FSSC22000"
+                - K-MILK 인증서 -> "K-MILK"
+                - 무항생제 인증서 -> "무항생제"
+                - 유기가공식품 인증서 -> "유기가공식품"
+                - FDA 식품시설등록(FFR) -> "FDA_FFR"
+                - FDA 공장등록(FCE) -> "FDA_FCE"
+                - 책임보험/영업배상/PL -> "책임보험"
                 
-                💡 [무한 확장(Dynamic) - 엄격한 통제 규칙] 💡
-                - 가설건축물, 수질검사, 보건증, 교육 등 개체(동수, 번호, 이름, 교육명)가 여러 개인 문서는 본문을 분석해 스스로 키워드를 확장해.
-                - 🚨 단, 반드시 아래 허용된 '접두사(Prefix)'로만 시작해야 해! 그 외의 쓸데없는 잡다한 서류는 내용 불문하고 무조건 "PASS" 처리해.
+                💡 [무한 확장(Dynamic) 규칙] 💡
+                - 가설건축물, 수질검사, 보건증, 교육 등 개체(동수, 번호, 이름, 교육명)가 여러 개인 문서는 아래 허용된 접두사로 시작하게 키워드를 스스로 창조해.
                 - 허용 접두사: "가설건축물_", "수질검사_", "보건증_", "교육_"
-                - 올바른 예시: "가설건축물_8동", "보건증_홍길동", "교육_영업자신규"
-                - 잘못된 예시 (창조 금지): "영수증_식대", "일반_기안서" -> 무조건 "PASS"
+                - 예시: "가설건축물_8동", "보건증_홍길동"
                 
-                만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류는 '영구'로 기재해. 
-                유효기간이나 갱신 주기가 없는 단순 매뉴얼, 기준서만 "키워드"에 "PASS"라고 적어.
+                🚨 [예외 처리 - 버리지 말고 무조건 기록] 🚨
+                - 사내 규정, 기준서, 위기대응 절차 등 유효기간이 없는 지침서는 무조건 "매뉴얼" 로 분류해.
+                - 영수증, 회식 기안서, 관련 없는 사진 등 아예 쓸모없는 쓰레기 데이터는 절대 누락시키지 말고 무조건 "기타" 로 분류해. (절대 PASS 금지)
+                
+                만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류나 매뉴얼은 '영구'로 기재해. 
                 
                 반드시 JSON 형식으로만 응답할 것.
                 형식: {
@@ -1007,14 +1042,11 @@ with tab4:
                             
                             parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
                             
-                            if parsed.get("키워드") != "PASS":
-                                parsed["파일명"] = f['name']
-                                parsed["파일 ID"] = f['id']
-                                parsed["뷰어 링크"] = f['webViewLink']
-                                new_db_entries.append(parsed)
-                                update_log(f"✅ [{i+1}/{total}] 추출 성공! 키워드: {parsed.get('키워드')}")
-                            else:
-                                update_log(f"⏭️ [{i+1}/{total}] 유효기간 없는 서류(PASS) 분류됨")
+                            parsed["파일명"] = f['name']
+                            parsed["파일 ID"] = f['id']
+                            parsed["뷰어 링크"] = f['webViewLink']
+                            new_db_entries.append(parsed)
+                            update_log(f"✅ [{i+1}/{total}] 추출 완료! 부여된 키워드: {parsed.get('키워드')}")
                             
                             genai.delete_file(up_file.name)
                             os.remove(tmp_path)
@@ -1040,27 +1072,42 @@ with tab4:
                     scan_aborted = True
                 finally:
                     if new_db_entries:
-                        latest_db_dict = {}
+                        # 💡 [핵심 저장 로직] ELT 방식 적용 (추출은 100%, 덮어쓰기는 선별적으로)
+                        latest_db_dict = {}  # 마스터 및 동적 키워드 (최신본 1개만 남김)
+                        append_db_dict = {}  # 기타, 매뉴얼 등 (전부 다 남김)
                         
+                        # 1. 기존 데이터 불러와서 분류
                         if st.session_state.auto_db:
                             for old_row in st.session_state.auto_db:
                                 kw = old_row.get("키워드", "")
-                                if kw and kw != "PASS":
+                                fid = old_row.get("파일 ID", "")
+                                if kw in ("기타", "매뉴얼"):
+                                    append_db_dict[fid] = old_row
+                                elif kw:
                                     exp_str = str(old_row.get("만료일", ""))
                                     sort_date = "9999-12-31" if exp_str == "영구" else exp_str
                                     latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
                         
                         allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
                         
+                        # 2. 신규 데이터 병합
                         for entry in new_db_entries:
                             kw = entry.get("키워드", "")
-                            if kw == "PASS": 
+                            fid = entry.get("파일 ID", "")
+                            
+                            # 매뉴얼이거나 기타인 경우 덮어쓰지 않고 전부 누적 (File ID 기준)
+                            if kw in ("매뉴얼", "기타"):
+                                append_db_dict[fid] = entry
                                 continue
                             
+                            # AI가 지시를 어기고 이상한 키워드(예: 영수증_식대)를 만들었다면 강제로 '기타'로 묶어버림
                             if kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
-                                update_log(f"🛡️ 쓰레기 데이터 차단됨: {kw}")
+                                entry["키워드"] = "기타"
+                                append_db_dict[fid] = entry
+                                update_log(f"🛡️ 미인가 키워드 강제 '기타' 편입: {kw}")
                                 continue
                             
+                            # 정규 인증서 및 동적 확장 서류 (최신본 경쟁)
                             exp_str = str(entry.get("만료일", ""))
                             sort_date = "9999-12-31" if exp_str == "영구" else exp_str
                             
@@ -1070,13 +1117,14 @@ with tab4:
                                 if sort_date > latest_db_dict[kw]["sort_date"]:
                                     latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
 
-                        filtered_db_entries = [v["entry"] for v in latest_db_dict.values()]
+                        # 3. 최신본 + 누적본 합쳐서 최종 시트 DB 생성
+                        filtered_db_entries = [v["entry"] for v in latest_db_dict.values()] + list(append_db_dict.values())
                         st.session_state.auto_db = filtered_db_entries
                         
                         if scan_aborted:
-                            update_log("💾 중단점까지 병합된 최신 데이터를 구글 시트에 강제 저장합니다...")
+                            update_log("💾 중단점까지 병합된 전체 데이터를 구글 시트에 강제 저장합니다...")
                         else:
-                            update_log("🎉 분석 완료! 기존 데이터와 병합된 최신 데이터를 구글 시트에 저장합니다...")
+                            update_log("🎉 스캔 완료! 누락 없이 100% 추출된 데이터를 구글 시트에 저장합니다...")
                         
                         if sheet_service and SHEET_ID:
                             try:
@@ -1107,9 +1155,9 @@ with tab4:
                                     valueInputOption="RAW", body=body).execute()
                                     
                                 if scan_aborted:
-                                    st.warning("⚠️ 스캔이 강제 중단되었지만, 방금 전까지 추출된 데이터는 기존 DB와 안전하게 병합 저장되었습니다!")
+                                    st.warning("⚠️ 스캔이 강제 중단되었지만, 추출된 데이터는 안전하게 보존 저장되었습니다!")
                                 else:
-                                    st.success(f"🎉 스마트 병합 완료! 총 {len(filtered_db_entries)}개의 최신 메타데이터가 구글 시트에 유지/업데이트 되었습니다! (3번 탭 확인)")
+                                    st.success(f"🎉 데이터 보존율 100%! 총 {len(filtered_db_entries)}개의 데이터가 구글 시트에 유지/업데이트 되었습니다! (3번 탭 확인)")
                                 update_log(f"✅ 구글 시트 기록 완료! (최종 {len(filtered_db_entries)}개 저장됨)")
                             except Exception as e:
                                 st.error(f"⚠️ 구글 시트 저장 실패 (권한/ID 문제 확인 필요): {e}")
