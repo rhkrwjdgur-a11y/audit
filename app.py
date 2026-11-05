@@ -32,10 +32,9 @@ except ImportError:
 CACHE_META_FILE = "haccp_agent_cache.json"
 
 # ==========================================
-# [0-0] AI 현장심사 대응 지식베이스 (범용 매트릭스 교차검증 팩트 주입)
+# [0-0] AI 현장심사 대응 지식베이스
 # ==========================================
 KNOWLEDGE_BASE = {
-    # 💡 [핵심 업데이트] 특정 품목을 하드코딩하지 않고, 객관적 팩트 매핑으로 정규화
     "공장현재인증현황": """[아산공장 전체 HACCP 인증 보유 현황]
     1. 유가공업(우유, 발효유 등) 및 식품제조가공업(가공두유, 원액두유, 음료 등) 등 다수의 품목별 HACCP 인증을 보유 중임.
     2. [기인증 공정 범위 팩트]:
@@ -126,7 +125,6 @@ KNOWLEDGE_BASE = {
 # ==========================================
 FLAT_FOLDER_DB = {
     "인허가 서류": "1Y98P8DINsy_9ZheN4n-CCElfcoD4ZVvX",
-    "가설건축물": "1bZrA5PIGR3qMRn6OSX5Y-9BVtmCk-DFF",
     "인증서": "1ONXI69skOZGE-vzAyMmL_rMUjX5ZXjiz",
     "기준서": "1NyHIprsIniDHDpW0gXzDoyOx5pG3aJIM",
     "선행요건": "1IZCo0YknOP-AaLqn8akGYu7IlgDG1Qw0",
@@ -157,7 +155,7 @@ GW_DOC_LIST = [
 ]
 
 # ==========================================
-# [0-3] 법정주기 및 필수 서류 마스터 리스트 (Top-down 매핑용)
+# [0-3] 법정주기 및 필수 서류 마스터 리스트 (Top-down 고정 항목)
 # ==========================================
 MASTER_DOC_REQUIREMENTS = {
     "사업자등록": {"표시명": "사업자등록증 (연세유업/생활건강)", "주기": 0},
@@ -199,7 +197,6 @@ MASTER_DOC_REQUIREMENTS = {
     "보건증": {"표시명": "종사자 보건증 (대표)", "주기": 12},
     "법정위생교육": {"표시명": "법정 위생교육 수료증", "주기": 12},
     "HACCP교육": {"표시명": "HACCP 팀장/정기 교육 수료증", "주기": 12},
-    "가설건축물": {"표시명": "가설건축물 존치기간 연장 필증", "주기": 24},
     "책임보험": {"표시명": "영업배상책임보험 / PL보험 증권", "주기": 12},
     "모의회수": {"표시명": "모의회수(추적성) 훈련 결과", "주기": 12}
 }
@@ -261,7 +258,6 @@ st.markdown(custom_theme_css, unsafe_allow_html=True)
 # ==========================================
 # [2] API 인증 및 서비스 
 # ==========================================
-# 💡 [주임님 지시사항 반영] Gemini 3.8 모델 버전 확정
 MODEL_NAME = "models/gemini-3.8-flash"
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets']
 
@@ -353,7 +349,7 @@ def download_file_bytes(service, file_id):
     fh.seek(0)
     return fh.read()
 
-# 💡 [핵심 업데이트] 0.1초 다이렉트 뷰어 (DB 기반 호출)
+# 💡 [0.1초 다이렉트 뷰어 (DB 기반 호출)]
 def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None):
     service = get_drive_service()
     if not service: return
@@ -367,24 +363,23 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     db_list = st.session_state.auto_db
     matched_files = []
     
-    # 1. 시트 DB가 존재하고 마스터 키워드가 일치하면 0초만에 ID 즉각 획득
     if db_list and priority_keywords:
         for row in db_list:
             kw = row.get("키워드", "")
-            if kw in priority_keywords:
+            # 💡 [핵심] 동적 확장된 키워드(예: "가설건축물_1동")도 원클릭 버튼("가설건축물")에 걸리도록 포함 매칭
+            if any(req_kw in kw for req_kw in priority_keywords):
                 matched_files.append({
                     'id': row.get("파일 ID", ""),
                     'name': row.get("파일명", ""),
                     'webViewLink': row.get("뷰어 링크", ""),
                     'createdTime': row.get("발급일", ""),
-                    'mimeType': 'application/pdf'  # Viewer 렌더링용 임시 타입
+                    'mimeType': 'application/pdf'
                 })
     
     if matched_files:
         st.session_state.found_files = matched_files
         st.success(f"⚡ [DB 다이렉트 매칭] {len(matched_files)}개의 최신 서류를 0.1초 만에 불러왔습니다.")
     elif folder_key and folder_key in FLAT_FOLDER_DB:
-        # 2. DB에 없거나 폴백(Fallback) 상황 시 기존 드라이브 스캔 실행
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
             target_folders = get_target_folder_ids(service, target_id)
@@ -467,11 +462,8 @@ with st.sidebar:
                     uploaded_laws = []
                     target_pdfs = []
                     
-                    # 💡 [핵심 해결 로직] 폴더 내 126만 토큰 분량의 전체 과거 파일을 뒤지지 않고, 
-                    # 구글 시트에 살아남은 '최신 유효 파일' 중 기준서 및 인증서류만 핀셋 추출합니다.
                     for row in st.session_state.auto_db:
                         kw = row.get("키워드", "")
-                        # PASS(일반 매뉴얼) 또는 인증서, HACCP, FSSC 관련 키워드만 캐싱 대상으로 선별
                         if kw == "PASS" or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
                             fid = row.get("파일 ID")
                             fname = row.get("문서_실제제목") or row.get("파일명")
@@ -497,7 +489,6 @@ with st.sidebar:
                                 uploaded_laws.append(up)
                                 os.remove(tmp_path)
                             except Exception as inner_e:
-                                st.write(f"개별 파일 로드 실패 ({pf['name']}): {inner_e}")
                                 pass
                             cache_progress.progress((i + 1) / len(target_pdfs))
                         
@@ -561,7 +552,7 @@ with st.sidebar:
         
         with st.expander("🧼 3. 위생·환경 평가 및 인력 점검"):
             if st.button("수질검사 성적서 / 저수조 청소", use_container_width=True): 
-                execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["수질검사_반기", "수질검사_월간", "수질검사_노로", "저수조청소"])
+                execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["수질검사", "저수조청소"])
             if st.button("방역 관리 리포트 (GW)", use_container_width=True): 
                 execute_exact_match("방제 레포트", "방충방서 관련 서류", "방역 관리 리포트", ["방충방서_월간"])
             if st.button("종사자 보건증", use_container_width=True): 
@@ -576,8 +567,8 @@ with st.sidebar:
                 execute_exact_match("공정관리 일보", "", "공정관리 일보")
             if st.button("상업적 무균테스트 (GW)", use_container_width=True): 
                 execute_exact_match("무균테스트", "", "상업적 무균테스트 결과 보고서")
-            if st.button("계측기 검·교정 이력 (GW)", use_container_width=True): 
-                execute_exact_match("계측기", "", "공인기관 검·교정 결과")
+            if st.button("계측기 검·교정 이력", use_container_width=True): 
+                execute_exact_match("계측기", "", "공인기관 검·교정 결과", ["검교정"])
             if st.button("설비 유지보수 이력", use_container_width=True): 
                 execute_exact_match("설비이력", "설비이력", "")
             
@@ -746,7 +737,7 @@ with tab2:
                     except Exception as e:
                         st.error(f"오류: {e}")
 
-# ----------------- TAB 3: 대시보드 -----------------
+# ----------------- TAB 3: 대시보드 (💡 하이브리드 동적 확장 로직) -----------------
 with tab3:
     st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
     st.caption("※ 마스터 기준표(Top-down)에 따라 전체 필수 전산 서류의 누락 및 갱신 상태를 점검합니다.")
@@ -776,8 +767,11 @@ with tab3:
     dashboard_data = []
     missing_docs = []
     today = datetime.date.today()
+    processed_keys = set()
     
+    # 1. 고정 항목 (마스터 리스트 기준 점검)
     for key, meta in MASTER_DOC_REQUIREMENTS.items():
+        processed_keys.add(key)
         row_data = {
             "구분(키워드)": key,
             "서류명(마스터)": meta["표시명"],
@@ -817,6 +811,41 @@ with tab3:
         
         dashboard_data.append(row_data)
 
+    # 💡 2. 동적 추가 (가설건축물 N동, 보건증_홍길동 등 AI가 생성한 신규 키워드 자동 표시)
+    for key, doc in db_dict.items():
+        if key not in processed_keys and key != "PASS" and key.strip() != "":
+            exp_date_str = str(doc.get("만료일", ""))
+            cycle = str(doc.get("주기(개월)", "24"))
+            
+            dyn_row = {
+                "구분(키워드)": key,
+                "서류명(마스터)": f"💡 [자동감지] {doc.get('문서_실제제목', key)}",
+                "법정주기(개월)": cycle,
+                "스캔된 파일명": doc.get("파일명", ""),
+                "발급일": doc.get("발급일", ""),
+                "만료일": exp_date_str,
+                "개정(Rev)": doc.get("개정번호", "-"),
+                "D-Day": "-",
+                "상태": "-"
+            }
+            
+            if exp_date_str == "영구":
+                dyn_row["D-Day"] = "-"
+                dyn_row["상태"] = "✅ 영구 (갱신 불필요)"
+            else:
+                try:
+                    expire_date = pd.to_datetime(exp_date_str).date()
+                    d_day = (expire_date - today).days
+                    dyn_row["D-Day"] = str(d_day)
+                    if d_day < 0: dyn_row["상태"] = "🚨 기간 경과 (즉시 갱신)"
+                    elif d_day <= 30: dyn_row["상태"] = "⚠️ 갱신 임박 (30일 이내)"
+                    else: dyn_row["상태"] = "🟢 정상"
+                except:
+                    dyn_row["D-Day"] = "N/A"
+                    dyn_row["상태"] = "오류"
+            
+            dashboard_data.append(dyn_row)
+
     df_dashboard = pd.DataFrame(dashboard_data)
     
     def style_status(val):
@@ -830,7 +859,7 @@ with tab3:
     st.dataframe(df_dashboard.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
     
     if missing_docs:
-        st.error(f"🚨 **치명적 누락 경고 ({len(missing_docs)}건):** 아래 서류가 드라이브에 없거나 스캔되지 않았습니다!\n\n" + " / ".join(missing_docs))
+        st.error(f"🚨 **치명적 누락 경고 ({len(missing_docs)}건):** 필수 마스터 서류가 드라이브에 없거나 스캔되지 않았습니다!\n\n" + " / ".join(missing_docs))
 
 # ----------------- TAB 4: AI 마스터 DB -----------------
 with tab4:
@@ -908,6 +937,7 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
+                # 💡 [핵심 업데이트] AI 스캔 프롬프트 무한 확장(Dynamic) 규칙 추가
                 prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                 
                 [행동 강령 - 환각 원천 차단]
@@ -916,62 +946,27 @@ with tab4:
                 3. 문서 우측 상단이나 하단에 개정번호(Rev.0, Rev.1 등)가 있으면 반드시 추출해.
                 
                 [마스터 키워드 맵핑 규칙]
-                반드시 아래 정해진 키워드 중 가장 일치하는 1개로 변환해서 "키워드" 값에 넣어.
-                - 사업자등록증 -> "사업자등록"
-                - 공장등록증명서 -> "공장등록"
-                - 건축물대장 -> "건축물대장"
-                - 식품제조가공업 관련 영업증 -> "식품제조가공업"
-                - 축산물가공업/유가공업 허가증 -> "축산물가공업"
-                - 집유업 허가증 -> "집유업"
-                - 수입식품 영업 관련 -> "수입식품영업"
-                - 식품소분판매업 -> "식품소분업"
-                - 축산물유통전문판매업 -> "축산물판매업"
-                - 건강기능식품 영업 -> "건강기능식품영업"
-                - 통신판매업 -> "통신판매업"
-                - 집단급식소 관련 -> "집단급식소"
-                - 화장품책임판매업 -> "화장품책임판매"
-                - 지하수개발 이용허가서 -> "지하수개발허가"
-                - 중국 수출용/CHINA/중문 HACCP -> "CHINA_HACCP"
-                - 식약처 HACCP (가공두유) -> "HACCP_가공두유"
-                - 식약처 HACCP (원액두유) -> "HACCP_원액두유"
-                - 식약처 HACCP (유가공업) -> "HACCP_유가공업"
-                - 식약처 HACCP (과채주스) -> "HACCP_과채주스"
-                - 식약처 HACCP (과채음료) -> "HACCP_과채음료"
-                - 식약처 HACCP (혼합음료) -> "HACCP_혼합음료"
-                - 식약처 HACCP (유산균음료) -> "HACCP_유산균음료"
-                - 식약처 HACCP (커피) -> "HACCP_커피"
-                - 식약처 HACCP (액상차) -> "HACCP_액상차"
-                - 식약처 HACCP (일반환자용/당뇨/암환자 등) -> "HACCP_환자식"
-                - FSSC 22000 -> "FSSC22000"
-                - K-MILK 인증서 -> "K-MILK"
-                - 무항생제 인증서 -> "무항생제"
-                - 유기가공식품 인증서 -> "유기가공식품"
-                - FDA 식품시설등록(FFR) -> "FDA_FFR"
-                - FDA 공장등록(FCE) -> "FDA_FCE"
-                - 노로바이러스 검사 -> "수질검사_노로"
-                - 정기 수질검사(반기) -> "수질검사_반기"
-                - 먹는물 등 월간 수질검사 -> "수질검사_월간"
-                - 저수조 청소 필증/결과 -> "저수조청소"
-                - 방충방서 점검 리포트 -> "방충방서_월간"
-                - 가설건축물 관련 -> "가설건축물"
-                - 보건증/건강진단결과서 -> "보건증"
-                - 법정 위생교육 수료증 -> "법정위생교육"
-                - HACCP 관련 교육 수료증 -> "HACCP교육"
-                - 보험 증권(영업배상/PL) -> "책임보험"
-                - 모의회수(추적성) 계획/결과 -> "모의회수"
+                일반적인 서류는 기존 규칙대로 고정된 키워드를 사용해. (예: 공장등록, HACCP_가공두유 등)
                 
-                만료일이 안 적혀 있어도 '수질검사_월간', '방충방서_월간'처럼 주기가 명확한 서류는 발급일 기준으로 1개월 뒤를 만료일로 자동 계산해서 적어. 
-                만료일이 아예 없는 영구 서류는 '영구'로 기재해. 
+                💡 [무한 확장(Dynamic) 규칙] 💡
+                - 가설건축물 연장 필증이나 수질검사 성적서, 보건증, 검교정 성적서 등 개체(동수, 관정 번호, 장비명, 사람이름)가 여러 개인 문서는 본문을 분석하여 스스로 키워드를 확장 생성해. 
+                - 예시 1: "가설건축물_8동"
+                - 예시 2: "수질검사_지하수2호공"
+                - 예시 3: "보건증_곽정혁"
+                - 예시 4: "검교정_A호기살균기"
+                - 그 외 처음 보는 신규 인증서나 성적서라면 직관적으로 새로운 키워드를 만들어서 부여해.
+                
+                만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류는 '영구'로 기재해. 
                 유효기간이나 갱신 주기가 없는 단순 매뉴얼, 기준서만 "키워드"에 "PASS"라고 적어.
                 
                 반드시 JSON 형식으로만 응답할 것.
                 형식: {
-                    "키워드": "HACCP_가공두유", 
+                    "키워드": "가설건축물_3동", 
                     "문서_실제제목": "본문 공식 명칭", 
                     "발급일": "YYYY-MM-DD", 
                     "만료일": "YYYY-MM-DD",
                     "개정번호": "Rev.0",
-                    "분류근거": "발급기관 및 본문 내용이 식약처 가공두유 HACCP 인증임이 확인됨"
+                    "분류근거": "발급기관 및 본문 내용 매핑"
                 }"""
                 
                 try:
@@ -993,6 +988,9 @@ with tab4:
                                 tmp_path = tmp.name
                                 
                             up_file = genai.upload_file(path=tmp_path)
+                            
+                            time.sleep(3.5) # API 호출 제한 방어
+                            
                             ai_res = model.generate_content([up_file, prompt])
                             
                             parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
@@ -1008,29 +1006,37 @@ with tab4:
                             
                             genai.delete_file(up_file.name)
                             os.remove(tmp_path)
+                            
                         except Exception as e:
-                            update_log(f"❌ [{i+1}/{total}] 개별 파일 스캔 실패: {str(e)}")
-                            error_log.append(f"❌ '{f['name']}' 스캔 실패: {str(e)}")
+                            error_msg = str(e)
+                            if "429" in error_msg or "quota" in error_msg.lower():
+                                update_log(f"⚠️ [{i+1}/{total}] API 호출 제한 발생! 10초 대기 후 다음 파일 진행...")
+                                time.sleep(10)
+                            else:
+                                update_log(f"❌ [{i+1}/{total}] 스캔 실패 (파일 패스): {error_msg}")
+                            error_log.append(f"❌ '{f['name']}' 스캔 실패: {error_msg}")
+                            
                 except Exception as critical_err:
                     update_log(f"🚨 [치명적 오류] 스캔이 중간에 중단되었습니다: {str(critical_err)}")
                     st.error(f"⚠️ 시스템 오류로 전체 스캔이 멈췄습니다. (완료된 부분까지만 시트 저장을 시도합니다.)")
                     scan_aborted = True
                 finally:
                     if new_db_entries:
-                        # 💡 1. 백지화가 아닌, 기존 시트 DB 데이터를 먼저 불러와서 베이스(기초)로 깐다.
                         latest_db_dict = {}
+                        
+                        # 💡 기존 데이터 보존 (PASS가 아닌 모든 데이터 유지)
                         if st.session_state.auto_db:
                             for old_row in st.session_state.auto_db:
                                 kw = old_row.get("키워드", "")
-                                if kw and kw != "PASS" and kw in MASTER_DOC_REQUIREMENTS:
+                                if kw and kw != "PASS":
                                     exp_str = str(old_row.get("만료일", ""))
                                     sort_date = "9999-12-31" if exp_str == "영구" else exp_str
                                     latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
                         
-                        # 💡 2. 방금 스캔한 '새로운 데이터'와 경쟁시켜 더 최신본이면 덮어씌운다(업데이트).
+                        # 💡 [핵심 수정] 족쇄 완전 해제! 마스터 리스트에 없어도 PASS만 아니면 전부 저장(업데이트) 허용
                         for entry in new_db_entries:
                             kw = entry.get("키워드", "")
-                            if kw == "PASS" or kw not in MASTER_DOC_REQUIREMENTS: 
+                            if kw == "PASS": 
                                 continue
                             
                             exp_str = str(entry.get("만료일", ""))
@@ -1042,7 +1048,6 @@ with tab4:
                                 if sort_date > latest_db_dict[kw]["sort_date"]:
                                     latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
 
-                        # 3. 경쟁에서 살아남은(기존 보존 + 신규 업데이트) 최종 데이터를 시트에 저장한다.
                         filtered_db_entries = [v["entry"] for v in latest_db_dict.values()]
                         st.session_state.auto_db = filtered_db_entries
                         
