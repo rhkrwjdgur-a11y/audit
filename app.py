@@ -194,9 +194,6 @@ MASTER_DOC_REQUIREMENTS = {
     "수질검사_노로": {"표시명": "노로바이러스 검사 성적서", "주기": 12},
     "저수조청소": {"표시명": "저수조 청소필증 (상/하반기)", "주기": 6},
     "방충방서_월간": {"표시명": "방충방서 점검 리포트 (월간)", "주기": 1},
-    "보건증": {"표시명": "종사자 보건증 (대표)", "주기": 12},
-    "법정위생교육": {"표시명": "법정 위생교육 수료증", "주기": 12},
-    "HACCP교육": {"표시명": "HACCP 팀장/정기 교육 수료증", "주기": 12},
     "책임보험": {"표시명": "영업배상책임보험 / PL보험 증권", "주기": 12},
     "모의회수": {"표시명": "모의회수(추적성) 훈련 결과", "주기": 12}
 }
@@ -366,7 +363,6 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     if db_list and priority_keywords:
         for row in db_list:
             kw = row.get("키워드", "")
-            # 💡 [핵심] 동적 확장된 키워드(예: "가설건축물_1동")도 원클릭 버튼("가설건축물")에 걸리도록 포함 매칭
             if any(req_kw in kw for req_kw in priority_keywords):
                 matched_files.append({
                     'id': row.get("파일 ID", ""),
@@ -555,8 +551,8 @@ with st.sidebar:
                 execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["수질검사", "저수조청소"])
             if st.button("방역 관리 리포트 (GW)", use_container_width=True): 
                 execute_exact_match("방제 레포트", "방충방서 관련 서류", "방역 관리 리포트", ["방충방서_월간"])
-            if st.button("종사자 보건증", use_container_width=True): 
-                execute_exact_match("보건증", "선행요건", "", ["보건증"])
+            if st.button("종사자 보건증 및 수료증", use_container_width=True): 
+                execute_exact_match("보건증", "선행요건", "", ["보건증", "교육"])
             if st.button("손 위생 및 낙하세균 (GW)", use_container_width=True): 
                 execute_exact_match("위생 검사", "", "낙하세균 검사 결과")
             if st.button("냉장/냉동 창고 온도 일지 (GW)", use_container_width=True): 
@@ -567,8 +563,8 @@ with st.sidebar:
                 execute_exact_match("공정관리 일보", "", "공정관리 일보")
             if st.button("상업적 무균테스트 (GW)", use_container_width=True): 
                 execute_exact_match("무균테스트", "", "상업적 무균테스트 결과 보고서")
-            if st.button("계측기 검·교정 이력", use_container_width=True): 
-                execute_exact_match("계측기", "", "공인기관 검·교정 결과", ["검교정"])
+            if st.button("계측기 검·교정 이력 (GW)", use_container_width=True): 
+                execute_exact_match("계측기", "", "공인기관 검·교정 결과")
             if st.button("설비 유지보수 이력", use_container_width=True): 
                 execute_exact_match("설비이력", "설비이력", "")
             
@@ -769,6 +765,9 @@ with tab3:
     today = datetime.date.today()
     processed_keys = set()
     
+    # 💡 [핵심 방어막] 이 단어로 시작하지 않는 쓸데없는 잡다한 서류는 대시보드에 띄우지 않음!
+    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
+    
     # 1. 고정 항목 (마스터 리스트 기준 점검)
     for key, meta in MASTER_DOC_REQUIREMENTS.items():
         processed_keys.add(key)
@@ -811,40 +810,41 @@ with tab3:
         
         dashboard_data.append(row_data)
 
-    # 💡 2. 동적 추가 (가설건축물 N동, 보건증_홍길동 등 AI가 생성한 신규 키워드 자동 표시)
+    # 💡 2. 동적 추가 (허가된 접두사로 시작하는 신규 키워드만 엄격히 통과)
     for key, doc in db_dict.items():
         if key not in processed_keys and key != "PASS" and key.strip() != "":
-            exp_date_str = str(doc.get("만료일", ""))
-            cycle = str(doc.get("주기(개월)", "24"))
-            
-            dyn_row = {
-                "구분(키워드)": key,
-                "서류명(마스터)": f"💡 [자동감지] {doc.get('문서_실제제목', key)}",
-                "법정주기(개월)": cycle,
-                "스캔된 파일명": doc.get("파일명", ""),
-                "발급일": doc.get("발급일", ""),
-                "만료일": exp_date_str,
-                "개정(Rev)": doc.get("개정번호", "-"),
-                "D-Day": "-",
-                "상태": "-"
-            }
-            
-            if exp_date_str == "영구":
-                dyn_row["D-Day"] = "-"
-                dyn_row["상태"] = "✅ 영구 (갱신 불필요)"
-            else:
-                try:
-                    expire_date = pd.to_datetime(exp_date_str).date()
-                    d_day = (expire_date - today).days
-                    dyn_row["D-Day"] = str(d_day)
-                    if d_day < 0: dyn_row["상태"] = "🚨 기간 경과 (즉시 갱신)"
-                    elif d_day <= 30: dyn_row["상태"] = "⚠️ 갱신 임박 (30일 이내)"
-                    else: dyn_row["상태"] = "🟢 정상"
-                except:
-                    dyn_row["D-Day"] = "N/A"
-                    dyn_row["상태"] = "오류"
-            
-            dashboard_data.append(dyn_row)
+            if key.startswith(allowed_dynamic_prefixes):
+                exp_date_str = str(doc.get("만료일", ""))
+                cycle = str(doc.get("주기(개월)", "24"))
+                
+                dyn_row = {
+                    "구분(키워드)": key,
+                    "서류명(마스터)": f"💡 [자동감지] {doc.get('문서_실제제목', key)}",
+                    "법정주기(개월)": cycle,
+                    "스캔된 파일명": doc.get("파일명", ""),
+                    "발급일": doc.get("발급일", ""),
+                    "만료일": exp_date_str,
+                    "개정(Rev)": doc.get("개정번호", "-"),
+                    "D-Day": "-",
+                    "상태": "-"
+                }
+                
+                if exp_date_str == "영구":
+                    dyn_row["D-Day"] = "-"
+                    dyn_row["상태"] = "✅ 영구 (갱신 불필요)"
+                else:
+                    try:
+                        expire_date = pd.to_datetime(exp_date_str).date()
+                        d_day = (expire_date - today).days
+                        dyn_row["D-Day"] = str(d_day)
+                        if d_day < 0: dyn_row["상태"] = "🚨 기간 경과 (즉시 갱신)"
+                        elif d_day <= 30: dyn_row["상태"] = "⚠️ 갱신 임박 (30일 이내)"
+                        else: dyn_row["상태"] = "🟢 정상"
+                    except:
+                        dyn_row["D-Day"] = "N/A"
+                        dyn_row["상태"] = "오류"
+                
+                dashboard_data.append(dyn_row)
 
     df_dashboard = pd.DataFrame(dashboard_data)
     
@@ -937,7 +937,7 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
-                # 💡 [핵심 업데이트] AI 스캔 프롬프트 무한 확장(Dynamic) 규칙 추가
+                # 💡 [핵심 업데이트] AI 스캔 프롬프트 무한 확장(Dynamic) 족쇄 추가
                 prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                 
                 [행동 강령 - 환각 원천 차단]
@@ -946,15 +946,14 @@ with tab4:
                 3. 문서 우측 상단이나 하단에 개정번호(Rev.0, Rev.1 등)가 있으면 반드시 추출해.
                 
                 [마스터 키워드 맵핑 규칙]
-                일반적인 서류는 기존 규칙대로 고정된 키워드를 사용해. (예: 공장등록, HACCP_가공두유 등)
+                일반적인 서류는 기존 규칙대로 고정된 키워드를 사용해.
                 
-                💡 [무한 확장(Dynamic) 규칙] 💡
-                - 가설건축물 연장 필증이나 수질검사 성적서, 보건증, 검교정 성적서 등 개체(동수, 관정 번호, 장비명, 사람이름)가 여러 개인 문서는 본문을 분석하여 스스로 키워드를 확장 생성해. 
-                - 예시 1: "가설건축물_8동"
-                - 예시 2: "수질검사_지하수2호공"
-                - 예시 3: "보건증_곽정혁"
-                - 예시 4: "검교정_A호기살균기"
-                - 그 외 처음 보는 신규 인증서나 성적서라면 직관적으로 새로운 키워드를 만들어서 부여해.
+                💡 [무한 확장(Dynamic) - 엄격한 통제 규칙] 💡
+                - 가설건축물, 수질검사, 보건증, 교육 등 개체(동수, 번호, 이름, 교육명)가 여러 개인 문서는 본문을 분석해 스스로 키워드를 확장해.
+                - 🚨 단, 반드시 아래 허용된 '접두사(Prefix)'로만 시작해야 해! 그 외의 쓸데없는 잡다한 서류는 내용 불문하고 무조건 "PASS" 처리해.
+                - 허용 접두사: "가설건축물_", "수질검사_", "보건증_", "교육_"
+                - 올바른 예시: "가설건축물_8동", "보건증_홍길동", "교육_영업자신규"
+                - 잘못된 예시 (창조 금지): "영수증_식대", "일반_기안서" -> 무조건 "PASS"
                 
                 만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류는 '영구'로 기재해. 
                 유효기간이나 갱신 주기가 없는 단순 매뉴얼, 기준서만 "키워드"에 "PASS"라고 적어.
@@ -1024,7 +1023,6 @@ with tab4:
                     if new_db_entries:
                         latest_db_dict = {}
                         
-                        # 💡 기존 데이터 보존 (PASS가 아닌 모든 데이터 유지)
                         if st.session_state.auto_db:
                             for old_row in st.session_state.auto_db:
                                 kw = old_row.get("키워드", "")
@@ -1033,10 +1031,17 @@ with tab4:
                                     sort_date = "9999-12-31" if exp_str == "영구" else exp_str
                                     latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
                         
-                        # 💡 [핵심 수정] 족쇄 완전 해제! 마스터 리스트에 없어도 PASS만 아니면 전부 저장(업데이트) 허용
+                        # 💡 2차 방어막: 허용된 접두사가 아니면 시트 DB 자체에 저장을 거부함
+                        allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
+                        
                         for entry in new_db_entries:
                             kw = entry.get("키워드", "")
                             if kw == "PASS": 
+                                continue
+                            
+                            # 마스터 리스트에 있거나, 허용된 접두사로 시작할 때만 통과! (쓰레기 데이터 차단)
+                            if kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
+                                update_log(f"🛡️ 쓰레기 데이터 차단됨: {kw}")
                                 continue
                             
                             exp_str = str(entry.get("만료일", ""))
