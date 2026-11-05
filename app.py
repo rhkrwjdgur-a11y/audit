@@ -106,7 +106,7 @@ KNOWLEDGE_BASE = {
     "음료CCP1B_혼합음료특정제품": "혼합음료(스위플 레드오렌지, 샤인머스캣, 과일펀치 제외)와 커피의 경우, 멸균 온도 135~150℃, 시간 30~37초간으로 관리하며, A2프로틴 오리지널의 경우 143~153℃, 3.6~4.4초간으로 관리합니다.",
     "음료CCP1B_커피": "커피의 유액멸균(CCP-1B) 한계기준은 135~150℃에서 10~14초간입니다.",
     "음료CCP2P_여과": "음료류 여과(CCP-2P) 한계기준은 여과망 1.0Φ 사용 및 파손 여부 확인입니다.",
-    "음료CCP3B_포장지멸균": "테트라팩은 과산화수소 농도 32~50% 또는 eBeam 전류값 95~105%로, 콤비블럭은 과산화수소 온도 250~290℃, 분사량 350~450μl/s(150~250μl/s 등 제품별 상이)로 포장지 멸균을 관리합니다.",
+    "음료CCP3B_포장지멸균": "테트라팩은 과산화수소 농도 32~50% 또는 eBeam 전류값 95~105%로, 콤블럭은 과산화수소 온도 250~290℃, 분사량 350~450μl/s(150~250μl/s 등 제품별 상이)로 포장지 멸균을 관리합니다.",
     "집유장원유검사": "원유 입고 시 관능, 비중(1.028~1.034), 알콜(70% 음성), 진애(2.0mg 이하), 산도(0.14% 이하), 조지방(3.2% 이상), 세균발육억제물질(음성), 가수/빙점(-508 이하) 등을 검사하며, A2 원유는 A2 단백질 100% 여부를 추가 확인합니다.",
     "집유장원유저장": "원유의 보관 및 유통 온도는 농가 0~4℃, 탱크로리 0~7℃, 저유조 0~7℃로 관리됩니다.",
     "집유장여과및청정": "수유 시 60 mesh 여과망으로 이물을 제거하며(1일 2회 분해 점검), 일반 원유는 5,300~6,000 rpm의 청정기를 거치나 A2 및 무항생제 원유는 청정 공정을 제외합니다.",
@@ -479,7 +479,6 @@ with st.sidebar:
                                 
                                 up = genai.upload_file(tmp_path, display_name=pf['name'])
                                 
-                                # 캐싱 단계 무한 대기 방어막
                                 wait_time = 0
                                 while up.state.name == "PROCESSING" and wait_time < 60:
                                     time.sleep(2)
@@ -770,7 +769,6 @@ with tab3:
     today = datetime.date.today()
     processed_keys = set()
     
-    # 💡 [핵심 방어막] 이 단어로 시작하지 않는 쓸데없는 잡다한 서류는 대시보드에 띄우지 않음!
     allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
     
     # 1. 고정 항목 (마스터 리스트 기준 점검)
@@ -934,7 +932,8 @@ with tab4:
                 def update_log(msg):
                     log_history.append(msg)
                     display_text = "\n".join(log_history[-15:])
-                    log_box.text_area("📡 실시간 진행 로그 (최근 내역)", display_text, height=300)
+                    # 💡 [핵심 해결] 텍스트 에어리어가 아닌 마크다운(코드) 블록으로 변경하여 Duplicate 에러 완벽 해결!
+                    log_box.markdown(f"**📡 실시간 진행 로그 (최근 내역)**\n```text\n{display_text}\n```")
 
                 error_log = []
                 new_db_entries = []
@@ -942,7 +941,6 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
-                # 💡 [핵심 업데이트] AI 스캔 프롬프트 무한 확장(Dynamic) 족쇄 및 교육_ 추가
                 prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                 
                 [행동 강령 - 환각 원천 차단]
@@ -958,7 +956,7 @@ with tab4:
                 - 🚨 단, 반드시 아래 허용된 '접두사(Prefix)'로만 시작해야 해! 그 외의 쓸데없는 잡다한 서류는 내용 불문하고 무조건 "PASS" 처리해.
                 - 허용 접두사: "가설건축물_", "수질검사_", "보건증_", "교육_"
                 - 올바른 예시: "가설건축물_8동", "보건증_홍길동", "교육_영업자신규"
-                - 잘못된 예시 (창조 금지): "영수증_식대", "검교정_온도계", "일반_기안서" -> 무조건 "PASS"
+                - 잘못된 예시 (창조 금지): "영수증_식대", "일반_기안서" -> 무조건 "PASS"
                 
                 만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류는 '영구'로 기재해. 
                 유효기간이나 갱신 주기가 없는 단순 매뉴얼, 기준서만 "키워드"에 "PASS"라고 적어.
@@ -993,7 +991,6 @@ with tab4:
                                 
                             up_file = genai.upload_file(path=tmp_path)
                             
-                            # 💡 [방어막 1] 파일 처리 무한 대기 차단 (최대 60초)
                             wait_time = 0
                             while up_file.state.name == "PROCESSING" and wait_time < 60:
                                 time.sleep(2)
@@ -1023,7 +1020,6 @@ with tab4:
                             os.remove(tmp_path)
                             
                         except Exception as e:
-                            # 💡 [방어막 2] 한글화된 에러 로깅 및 통신 단절 강제 중지
                             error_msg = str(e)
                             if "429" in error_msg or "quota" in error_msg.lower():
                                 update_log(f"⚠️ [{i+1}/{total}] 구글 API 호출 제한(429)! 10초 대기 후 다음 파일 진행...")
@@ -1033,13 +1029,12 @@ with tab4:
                                 update_log("🚨 치명적 네트워크 오류로 스캔을 강제 중단하고 저장 단계로 넘어갑니다.")
                                 error_log.append(f"🔌 '{f['name']}' 스캔 중 통신 단절: {error_msg}")
                                 scan_aborted = True
-                                break # 강제 루프 종료 후 finally로 이동하여 방금 전까지 데이터 저장
+                                break 
                             else:
                                 update_log(f"❌ [{i+1}/{total}] 스캔 실패 (파일 패스): {error_msg}")
                                 error_log.append(f"❌ '{f['name']}' 스캔 실패: {error_msg}")
                             
                 except Exception as critical_err:
-                    # 💡 전체 시스템 다운 방어
                     update_log(f"🚨 [치명적 시스템 오류] {str(critical_err)}")
                     st.error(f"⚠️ 시스템 오류로 전체 스캔이 멈췄습니다.\n상세 원인: {str(critical_err)}")
                     scan_aborted = True
@@ -1055,7 +1050,6 @@ with tab4:
                                     sort_date = "9999-12-31" if exp_str == "영구" else exp_str
                                     latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
                         
-                        # 💡 2차 방어막: 허용된 접두사가 아니면 시트 DB 자체에 저장을 거부함
                         allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
                         
                         for entry in new_db_entries:
@@ -1063,7 +1057,6 @@ with tab4:
                             if kw == "PASS": 
                                 continue
                             
-                            # 마스터 리스트에 있거나, 허용된 접두사로 시작할 때만 통과! (쓰레기 데이터 차단)
                             if kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
                                 update_log(f"🛡️ 쓰레기 데이터 차단됨: {kw}")
                                 continue
