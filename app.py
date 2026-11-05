@@ -346,7 +346,6 @@ def download_file_bytes(service, file_id):
     fh.seek(0)
     return fh.read()
 
-# 💡 [0.1초 다이렉트 뷰어 (DB 기반 호출)]
 def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None):
     service = get_drive_service()
     if not service: return
@@ -479,10 +478,16 @@ with st.sidebar:
                                     tmp_path = tmp.name
                                 
                                 up = genai.upload_file(tmp_path, display_name=pf['name'])
-                                while up.state.name == "PROCESSING":
+                                
+                                # 캐싱 단계 무한 대기 방어막
+                                wait_time = 0
+                                while up.state.name == "PROCESSING" and wait_time < 60:
                                     time.sleep(2)
+                                    wait_time += 2
                                     up = genai.get_file(up.name)
-                                uploaded_laws.append(up)
+                                    
+                                if up.state.name == "ACTIVE":
+                                    uploaded_laws.append(up)
                                 os.remove(tmp_path)
                             except Exception as inner_e:
                                 pass
@@ -937,7 +942,7 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
-                # 💡 [핵심 업데이트] AI 스캔 프롬프트 무한 확장(Dynamic) 족쇄 추가
+                # 💡 [핵심 업데이트] AI 스캔 프롬프트 무한 확장(Dynamic) 족쇄 및 교육_ 추가
                 prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                 
                 [행동 강령 - 환각 원천 차단]
@@ -953,7 +958,7 @@ with tab4:
                 - 🚨 단, 반드시 아래 허용된 '접두사(Prefix)'로만 시작해야 해! 그 외의 쓸데없는 잡다한 서류는 내용 불문하고 무조건 "PASS" 처리해.
                 - 허용 접두사: "가설건축물_", "수질검사_", "보건증_", "교육_"
                 - 올바른 예시: "가설건축물_8동", "보건증_홍길동", "교육_영업자신규"
-                - 잘못된 예시 (창조 금지): "영수증_식대", "일반_기안서" -> 무조건 "PASS"
+                - 잘못된 예시 (창조 금지): "영수증_식대", "검교정_온도계", "일반_기안서" -> 무조건 "PASS"
                 
                 만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류는 '영구'로 기재해. 
                 유효기간이나 갱신 주기가 없는 단순 매뉴얼, 기준서만 "키워드"에 "PASS"라고 적어.
@@ -988,8 +993,19 @@ with tab4:
                                 
                             up_file = genai.upload_file(path=tmp_path)
                             
-                            time.sleep(3.5) # API 호출 제한 방어
+                            # 💡 [방어막 1] 파일 처리 무한 대기 차단 (최대 60초)
+                            wait_time = 0
+                            while up_file.state.name == "PROCESSING" and wait_time < 60:
+                                time.sleep(2)
+                                wait_time += 2
+                                up_file = genai.get_file(up_file.name)
+                                
+                            if up_file.state.name == "FAILED":
+                                raise Exception("구글 서버에서 해당 파일의 판독을 거부/실패했습니다.")
+                            elif up_file.state.name == "PROCESSING":
+                                raise Exception("구글 서버 응답 지연(60초 초과). 인터넷 불안정 또는 서버 과부하입니다.")
                             
+                            time.sleep(3.5) # API 호출 제한 방어
                             ai_res = model.generate_content([up_file, prompt])
                             
                             parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
@@ -1007,17 +1023,25 @@ with tab4:
                             os.remove(tmp_path)
                             
                         except Exception as e:
+                            # 💡 [방어막 2] 한글화된 에러 로깅 및 통신 단절 강제 중지
                             error_msg = str(e)
                             if "429" in error_msg or "quota" in error_msg.lower():
-                                update_log(f"⚠️ [{i+1}/{total}] API 호출 제한 발생! 10초 대기 후 다음 파일 진행...")
+                                update_log(f"⚠️ [{i+1}/{total}] 구글 API 호출 제한(429)! 10초 대기 후 다음 파일 진행...")
                                 time.sleep(10)
+                            elif "time" in error_msg.lower() or "connect" in error_msg.lower() or "503" in error_msg:
+                                update_log(f"🔌 [{i+1}/{total}] 통신 끊김 또는 구글 서버 에러 발생!: {error_msg}")
+                                update_log("🚨 치명적 네트워크 오류로 스캔을 강제 중단하고 저장 단계로 넘어갑니다.")
+                                error_log.append(f"🔌 '{f['name']}' 스캔 중 통신 단절: {error_msg}")
+                                scan_aborted = True
+                                break # 강제 루프 종료 후 finally로 이동하여 방금 전까지 데이터 저장
                             else:
                                 update_log(f"❌ [{i+1}/{total}] 스캔 실패 (파일 패스): {error_msg}")
-                            error_log.append(f"❌ '{f['name']}' 스캔 실패: {error_msg}")
+                                error_log.append(f"❌ '{f['name']}' 스캔 실패: {error_msg}")
                             
                 except Exception as critical_err:
-                    update_log(f"🚨 [치명적 오류] 스캔이 중간에 중단되었습니다: {str(critical_err)}")
-                    st.error(f"⚠️ 시스템 오류로 전체 스캔이 멈췄습니다. (완료된 부분까지만 시트 저장을 시도합니다.)")
+                    # 💡 전체 시스템 다운 방어
+                    update_log(f"🚨 [치명적 시스템 오류] {str(critical_err)}")
+                    st.error(f"⚠️ 시스템 오류로 전체 스캔이 멈췄습니다.\n상세 원인: {str(critical_err)}")
                     scan_aborted = True
                 finally:
                     if new_db_entries:
@@ -1090,7 +1114,7 @@ with tab4:
                                     valueInputOption="RAW", body=body).execute()
                                     
                                 if scan_aborted:
-                                    st.warning("⚠️ 스캔은 중간에 멈췄지만, 방금 전까지 추출된 데이터는 기존 DB와 안전하게 병합 저장되었습니다!")
+                                    st.warning("⚠️ 스캔이 강제 중단되었지만, 방금 전까지 추출된 데이터는 기존 DB와 안전하게 병합 저장되었습니다!")
                                 else:
                                     st.success(f"🎉 스마트 병합 완료! 총 {len(filtered_db_entries)}개의 최신 메타데이터가 구글 시트에 유지/업데이트 되었습니다! (3번 탭 확인)")
                                 update_log(f"✅ 구글 시트 기록 완료! (최종 {len(filtered_db_entries)}개 저장됨)")
