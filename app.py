@@ -458,7 +458,6 @@ with st.sidebar:
                     uploaded_laws = []
                     target_pdfs = []
                     
-                    # 💡 [캐싱 최적화] 쓰레기 데이터는 캐싱하지 않고, 정규 인증서와 매뉴얼만 캐싱
                     for row in st.session_state.auto_db:
                         kw = row.get("키워드", "")
                         if kw == "매뉴얼" or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
@@ -942,7 +941,6 @@ with tab4:
                 
                 model = genai.GenerativeModel(MODEL_NAME)
                 
-                # 💡 [핵심 업데이트] AI 프롬프트 아키텍처 대공사 (버리지 말고 모두 저장)
                 prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                 
                 [행동 강령 - 환각 원천 차단]
@@ -1027,15 +1025,16 @@ with tab4:
                             up_file = genai.upload_file(path=tmp_path)
                             
                             wait_time = 0
-                            while up_file.state.name == "PROCESSING" and wait_time < 60:
-                                time.sleep(2)
-                                wait_time += 2
+                            # 💡 [핵심 수정] 60초 제한 족쇄를 풀고, 용량이 커도 끝까지 기다리는 '무한 대기 모드' 적용
+                            while up_file.state.name == "PROCESSING":
+                                time.sleep(5) # 부하를 줄이기 위해 5초 단위로 체크
+                                wait_time += 5
+                                if wait_time % 15 == 0:
+                                    update_log(f"⏳ [{i+1}/{total}] 구글 AI 서버 판독 대기 중... ({wait_time}초 경과)")
                                 up_file = genai.get_file(up_file.name)
                                 
                             if up_file.state.name == "FAILED":
-                                raise Exception("구글 서버에서 해당 파일의 판독을 거부/실패했습니다.")
-                            elif up_file.state.name == "PROCESSING":
-                                raise Exception("구글 서버 응답 지연(60초 초과). 인터넷 불안정 또는 서버 과부하입니다.")
+                                raise Exception("구글 서버에서 해당 파일의 판독을 거부/실패했습니다. (파일 손상 또는 지원 불가)")
                             
                             time.sleep(3.5) # API 호출 제한 방어
                             ai_res = model.generate_content([up_file, prompt])
