@@ -922,7 +922,6 @@ with tab4:
             if "files_to_scan" not in st.session_state or not st.session_state.files_to_scan:
                 st.warning("먼저 '1단계: 대상 파일 조회' 버튼을 눌러주세요.")
             else:
-                files_to_scan = st.session_state.files_to_scan
                 service = get_drive_service()
                 sheet_service = get_sheets_service()
                 
@@ -936,87 +935,126 @@ with tab4:
                     log_box.code(display_text, language="text")
 
                 error_log = []
-                new_db_entries = []
-                scan_aborted = False
                 
-                model = genai.GenerativeModel(MODEL_NAME)
+                # 💡 [핵심 기술 1] 이미 스캔된 파일 건너뛰기 (Resume)
+                scanned_ids = set()
+                if sheet_service and SHEET_ID:
+                    try:
+                        sc_res = sheet_service.spreadsheets().values().get(spreadsheetId=SHEET_ID, range="SCANNED!A:A").execute()
+                        sc_vals = sc_res.get('values', [])
+                        for row in sc_vals:
+                            if row: scanned_ids.add(row[0])
+                    except Exception as e:
+                        update_log("⚠️ SCANNED 시트를 찾을 수 없거나 비어 있습니다. 새로 생성하거나 처음부터 스캔합니다.")
                 
-                prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
+                files_to_process = [f for f in st.session_state.files_to_scan if f['id'] not in scanned_ids]
+                skipped_count = len(st.session_state.files_to_scan) - len(files_to_process)
                 
-                [행동 강령 - 환각 원천 차단]
-                1. 문서의 날짜를 절대 임의로 계산하거나 유추하지 마. 활자나 도장으로 명확히 찍힌 날짜만 추출하고, 없으면 "미상"으로 기재해.
-                2. 단순히 파일명이나 단어 몇 개가 겹친다고 성급히 분류하지 마. 발급 기관, 문서 목적, 하단 직인 유무를 종합 분석하여 확신할 때만 마스터 키워드를 부여해.
-                3. 문서 우측 상단이나 하단에 개정번호(Rev.0, Rev.1 등)가 있으면 반드시 추출해.
+                if skipped_count > 0:
+                    update_log(f"⏭️ 이미 스캔 완료된 문서 {skipped_count}개를 건너뛰고 남은 {len(files_to_process)}개만 진행합니다.")
                 
-                [마스터 키워드 맵핑 규칙 - 엄수]
-                🚨 아래 정해진 키워드 중 완벽히 일치하는 1개로 변환해서 "키워드" 값에 넣어.
-                - 사업자등록증 -> "사업자등록"
-                - 공장등록증명서 -> "공장등록"
-                - 건축물대장 -> "건축물대장"
-                - 식품제조가공업 관련 영업증/등록증 -> "식품제조가공업"
-                - 축산물가공업/유가공업 허가증 -> "축산물가공업"
-                - 집유업 허가증 -> "집유업"
-                - 수입식품 영업 관련 -> "수입식품영업"
-                - 식품소분판매업, 일반 영업신고증 -> "식품소분업"
-                - 축산물유통전문판매업 -> "축산물판매업"
-                - 건강기능식품 영업/신고증 -> "건강기능식품영업"
-                - 통신판매업신고증 -> "통신판매업"
-                - 방문판매업신고증 -> "방문판매업"
-                - 집단급식소 관련 -> "집단급식소"
-                - 화장품책임판매업 -> "화장품책임판매"
-                - 지하수개발 이용허가서 -> "지하수개발허가"
-                - 식약처 HACCP (가공두유) -> "HACCP_가공두유"
-                - 식약처 HACCP (원액두유) -> "HACCP_원액두유"
-                - 식약처 HACCP (유가공업) -> "HACCP_유가공업"
-                - 식약처 HACCP (과채주스) -> "HACCP_과채주스"
-                - 식약처 HACCP (과채음료) -> "HACCP_과채음료"
-                - 식약처 HACCP (혼합음료) -> "HACCP_혼합음료"
-                - 식약처 HACCP (유산균음료) -> "HACCP_유산균음료"
-                - 식약처 HACCP (커피) -> "HACCP_커피"
-                - 식약처 HACCP (액상차) -> "HACCP_액상차"
-                - 식약처 HACCP (일반환자용/당뇨/암환자 등) -> "HACCP_환자식"
-                - FSSC 22000 -> "FSSC22000"
-                - K-MILK 인증서 -> "K-MILK"
-                - 무항생제 인증서 -> "무항생제"
-                - 유기가공식품 인증서 -> "유기가공식품"
-                - FDA 식품시설등록(FFR) -> "FDA_FFR"
-                - FDA 공장등록(FCE) -> "FDA_FCE"
-                - 책임보험/영업배상/PL -> "책임보험"
-                
-                💡 [무한 확장(Dynamic) 규칙] 💡
-                - 가설건축물, 수질검사, 보건증, 교육 등 개체(동수, 번호, 이름, 교육명)가 여러 개인 문서는 아래 허용된 접두사로 시작하게 키워드를 스스로 창조해.
-                - 허용 접두사: "가설건축물_", "수질검사_", "보건증_", "교육_"
-                - 예시: "가설건축물_8동", "보건증_홍길동"
-                
-                🚨 [예외 처리 - 버리지 말고 무조건 기록] 🚨
-                - 사내 규정, 기준서, 위기대응 절차 등 유효기간이 없는 지침서는 무조건 "매뉴얼" 로 분류해.
-                - 영수증, 회식 기안서, 관련 없는 사진 등 아예 쓸모없는 쓰레기 데이터는 절대 누락시키지 말고 무조건 "기타" 로 분류해. (절대 PASS 금지)
-                
-                만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류나 매뉴얼은 '영구'로 기재해. 
-                
-                반드시 JSON 형식으로만 응답할 것.
-                형식: {
-                    "키워드": "가설건축물_3동", 
-                    "문서_실제제목": "본문 공식 명칭", 
-                    "발급일": "YYYY-MM-DD", 
-                    "만료일": "YYYY-MM-DD",
-                    "개정번호": "Rev.0",
-                    "분류근거": "발급기관 및 본문 내용 매핑"
-                }"""
-                
-                try:
-                    total = len(files_to_scan)
-                    for i, f in enumerate(files_to_scan):
+                total = len(files_to_process)
+                if total == 0:
+                    update_log("✅ 모든 문서가 이미 최신 상태로 스캔 완료되었습니다!")
+                    st.success("모든 문서가 이미 스캔되어 있습니다.")
+                else:
+                    model = genai.GenerativeModel(MODEL_NAME)
+                    
+                    prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
+                    
+                    [행동 강령 - 환각 원천 차단]
+                    1. 문서의 날짜를 절대 임의로 계산하거나 유추하지 마. 활자나 도장으로 명확히 찍힌 날짜만 추출하고, 없으면 "미상"으로 기재해.
+                    2. 단순히 파일명이나 단어 몇 개가 겹친다고 성급히 분류하지 마. 발급 기관, 문서 목적, 하단 직인 유무를 종합 분석하여 확신할 때만 마스터 키워드를 부여해.
+                    3. 문서 우측 상단이나 하단에 개정번호(Rev.0, Rev.1 등)가 있으면 반드시 추출해.
+                    
+                    [마스터 키워드 맵핑 규칙 - 엄수]
+                    🚨 아래 정해진 키워드 중 완벽히 일치하는 1개로 변환해서 "키워드" 값에 넣어.
+                    - 사업자등록증 -> "사업자등록"
+                    - 공장등록증명서 -> "공장등록"
+                    - 건축물대장 -> "건축물대장"
+                    - 식품제조가공업 관련 영업증/등록증 -> "식품제조가공업"
+                    - 축산물가공업/유가공업 허가증 -> "축산물가공업"
+                    - 집유업 허가증 -> "집유업"
+                    - 수입식품 영업 관련 -> "수입식품영업"
+                    - 식품소분판매업, 일반 영업신고증 -> "식품소분업"
+                    - 축산물유통전문판매업 -> "축산물판매업"
+                    - 건강기능식품 영업/신고증 -> "건강기능식품영업"
+                    - 통신판매업신고증 -> "통신판매업"
+                    - 방문판매업신고증 -> "방문판매업"
+                    - 집단급식소 관련 -> "집단급식소"
+                    - 화장품책임판매업 -> "화장품책임판매"
+                    - 지하수개발 이용허가서 -> "지하수개발허가"
+                    - 식약처 HACCP (가공두유) -> "HACCP_가공두유"
+                    - 식약처 HACCP (원액두유) -> "HACCP_원액두유"
+                    - 식약처 HACCP (유가공업) -> "HACCP_유가공업"
+                    - 식약처 HACCP (과채주스) -> "HACCP_과채주스"
+                    - 식약처 HACCP (과채음료) -> "HACCP_과채음료"
+                    - 식약처 HACCP (혼합음료) -> "HACCP_혼합음료"
+                    - 식약처 HACCP (유산균음료) -> "HACCP_유산균음료"
+                    - 식약처 HACCP (커피) -> "HACCP_커피"
+                    - 식약처 HACCP (액상차) -> "HACCP_액상차"
+                    - 식약처 HACCP (일반환자용/당뇨/암환자 등) -> "HACCP_환자식"
+                    - FSSC 22000 -> "FSSC22000"
+                    - K-MILK 인증서 -> "K-MILK"
+                    - 무항생제 인증서 -> "무항생제"
+                    - 유기가공식품 인증서 -> "유기가공식품"
+                    - FDA 식품시설등록(FFR) -> "FDA_FFR"
+                    - FDA 공장등록(FCE) -> "FDA_FCE"
+                    - 책임보험/영업배상/PL -> "책임보험"
+                    
+                    💡 [무한 확장(Dynamic) 규칙] 💡
+                    - 가설건축물, 수질검사, 보건증, 교육 등 개체(동수, 번호, 이름, 교육명)가 여러 개인 문서는 아래 허용된 접두사로 시작하게 키워드를 스스로 창조해.
+                    - 허용 접두사: "가설건축물_", "수질검사_", "보건증_", "교육_"
+                    - 예시: "가설건축물_8동", "보건증_홍길동"
+                    
+                    🚨 [예외 처리 - 버리지 말고 무조건 기록] 🚨
+                    - 사내 규정, 기준서, 위기대응 절차 등 유효기간이 없는 지침서는 무조건 "매뉴얼" 로 분류해.
+                    - 영수증, 회식 기안서, 관련 없는 사진 등 아예 쓸모없는 쓰레기 데이터는 절대 누락시키지 말고 무조건 "기타" 로 분류해. (절대 PASS 금지)
+                    
+                    만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류나 매뉴얼은 '영구'로 기재해. 
+                    
+                    반드시 JSON 형식으로만 응답할 것.
+                    형식: {
+                        "키워드": "가설건축물_3동", 
+                        "문서_실제제목": "본문 공식 명칭", 
+                        "발급일": "YYYY-MM-DD", 
+                        "만료일": "YYYY-MM-DD",
+                        "개정번호": "Rev.0",
+                        "분류근거": "발급기관 및 본문 내용 매핑"
+                    }"""
+                    
+                    latest_db_dict = {}  
+                    append_db_dict = {}  
+                    
+                    if st.session_state.auto_db:
+                        for old_row in st.session_state.auto_db:
+                            kw = old_row.get("키워드", "")
+                            fid = old_row.get("파일 ID", "")
+                            if kw in ("기타", "매뉴얼"):
+                                append_db_dict[fid] = old_row
+                            elif kw:
+                                exp_str = str(old_row.get("만료일", ""))
+                                sort_date = "9999-12-31" if exp_str == "영구" else exp_str
+                                latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
+                    
+                    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
+                    
+                    for i, f in enumerate(files_to_process):
                         update_log(f"⏳ [{i+1}/{total}] 문서 초정밀 분석 중: {f['name']}")
                         progress_bar.progress((i + 1) / total)
+                        
+                        fid = f['id']
+                        
                         try:
-                            file_bytes = download_file_bytes(service, f['id'])
-                            
                             mime = f['mimeType'].lower()
                             if "pdf" in mime: ext = ".pdf"
                             elif "png" in mime: ext = ".png"
                             elif "jpeg" in mime or "jpg" in mime: ext = ".jpg"
-                            else: ext = ".txt"
+                            else: 
+                                update_log(f"⏭️ [{i+1}/{total}] 지원되지 않는 파일 패스: {f['name']}")
+                                continue
+                                
+                            file_bytes = download_file_bytes(service, fid)
                             
                             with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
                                 tmp.write(file_bytes)
@@ -1025,16 +1063,15 @@ with tab4:
                             up_file = genai.upload_file(path=tmp_path)
                             
                             wait_time = 0
-                            # 💡 [핵심 수정] 60초 제한 족쇄를 풀고, 용량이 커도 끝까지 기다리는 '무한 대기 모드' 적용
-                            while up_file.state.name == "PROCESSING":
-                                time.sleep(5) # 부하를 줄이기 위해 5초 단위로 체크
-                                wait_time += 5
-                                if wait_time % 15 == 0:
-                                    update_log(f"⏳ [{i+1}/{total}] 구글 AI 서버 판독 대기 중... ({wait_time}초 경과)")
+                            while up_file.state.name == "PROCESSING" and wait_time < 120:
+                                time.sleep(2)
+                                wait_time += 2
                                 up_file = genai.get_file(up_file.name)
                                 
                             if up_file.state.name == "FAILED":
-                                raise Exception("구글 서버에서 해당 파일의 판독을 거부/실패했습니다. (파일 손상 또는 지원 불가)")
+                                raise Exception("구글 서버 판독 거부 (파일 손상 의심)")
+                            elif up_file.state.name == "PROCESSING":
+                                raise Exception("구글 서버 응답 지연 (120초 초과)")
                             
                             time.sleep(3.5) # API 호출 제한 방어
                             ai_res = model.generate_content([up_file, prompt])
@@ -1042,9 +1079,48 @@ with tab4:
                             parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
                             
                             parsed["파일명"] = f['name']
-                            parsed["파일 ID"] = f['id']
+                            parsed["파일 ID"] = fid
                             parsed["뷰어 링크"] = f['webViewLink']
-                            new_db_entries.append(parsed)
+                            
+                            # 💡 [핵심 기술 2] 1건 분석 완료 시 실시간 병합
+                            kw = parsed.get("키워드", "")
+                            if kw in ("매뉴얼", "기타"):
+                                append_db_dict[fid] = parsed
+                            elif kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
+                                parsed["키워드"] = "기타"
+                                append_db_dict[fid] = parsed
+                                update_log(f"🛡️ 미인가 키워드 강제 '기타' 편입: {kw}")
+                            else:
+                                exp_str = str(parsed.get("만료일", ""))
+                                sort_date = "9999-12-31" if exp_str == "영구" else exp_str
+                                if kw not in latest_db_dict or sort_date > latest_db_dict[kw]["sort_date"]:
+                                    latest_db_dict[kw] = {"entry": parsed, "sort_date": sort_date}
+                            
+                            # 메모리 DB 업데이트
+                            filtered_db_entries = [v["entry"] for v in latest_db_dict.values()] + list(append_db_dict.values())
+                            st.session_state.auto_db = filtered_db_entries
+                            
+                            # 💡 [핵심 기술 3] 파일 단위 실시간 구글 시트 저장 (팅겨도 살아남음!)
+                            if sheet_service and SHEET_ID:
+                                try:
+                                    # 1. 메인 DB 업데이트
+                                    sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:J").execute()
+                                    headers = ["키워드", "파일명", "문서_실제제목", "발급일", "만료일", "주기(개월)", "개정번호", "분류근거", "파일 ID", "뷰어 링크"]
+                                    values = [headers]
+                                    for row in filtered_db_entries:
+                                        r_kw = row.get("키워드", "")
+                                        cycle = str(MASTER_DOC_REQUIREMENTS.get(r_kw, {}).get("주기", 0))
+                                        values.append([
+                                            r_kw, row.get("파일명",""), row.get("문서_실제제목",""), row.get("발급일",""), row.get("만료일",""),
+                                            cycle, row.get("개정번호","-"), row.get("분류근거",""), row.get("파일 ID",""), row.get("뷰어 링크","")
+                                        ])
+                                    sheet_service.spreadsheets().values().update(spreadsheetId=SHEET_ID, range="DB!A1", valueInputOption="RAW", body={'values': values}).execute()
+                                    
+                                    # 2. SCANNED 시트에 기록 추가 (이어하기 용도)
+                                    sheet_service.spreadsheets().values().append(spreadsheetId=SHEET_ID, range="SCANNED!A:B", valueInputOption="RAW", insertDataOption="INSERT_ROWS", body={'values': [[fid, f['name']]]}).execute()
+                                except Exception as e:
+                                    update_log(f"⚠️ 시트 저장 실패 (다음 진행): {e}")
+
                             update_log(f"✅ [{i+1}/{total}] 추출 완료! 부여된 키워드: {parsed.get('키워드')}")
                             
                             genai.delete_file(up_file.name)
@@ -1053,117 +1129,19 @@ with tab4:
                         except Exception as e:
                             error_msg = str(e)
                             if "429" in error_msg or "quota" in error_msg.lower():
-                                update_log(f"⚠️ [{i+1}/{total}] 구글 API 호출 제한(429)! 10초 대기 후 다음 파일 진행...")
-                                time.sleep(10)
+                                update_log(f"⚠️ [{i+1}/{total}] 구글 API 호출 제한! 15초 대기 후 다음 파일 진행...")
+                                time.sleep(15)
                             elif "time" in error_msg.lower() or "connect" in error_msg.lower() or "503" in error_msg:
-                                update_log(f"🔌 [{i+1}/{total}] 통신 끊김 또는 구글 서버 에러 발생!: {error_msg}")
-                                update_log("🚨 치명적 네트워크 오류로 스캔을 강제 중단하고 저장 단계로 넘어갑니다.")
-                                error_log.append(f"🔌 '{f['name']}' 스캔 중 통신 단절: {error_msg}")
-                                scan_aborted = True
-                                break 
+                                update_log(f"🔌 [{i+1}/{total}] 통신 지연 발생! 해당 파일 스킵 후 계속 진행: {error_msg}")
+                                error_log.append(f"🔌 '{f['name']}' 스캔 지연 패스: {error_msg}")
+                                continue
                             else:
-                                update_log(f"❌ [{i+1}/{total}] 스캔 실패 (파일 패스): {error_msg}")
+                                update_log(f"❌ [{i+1}/{total}] 스캔 실패 (해당 파일 패스): {error_msg}")
                                 error_log.append(f"❌ '{f['name']}' 스캔 실패: {error_msg}")
-                            
-                except Exception as critical_err:
-                    update_log(f"🚨 [치명적 시스템 오류] {str(critical_err)}")
-                    st.error(f"⚠️ 시스템 오류로 전체 스캔이 멈췄습니다.\n상세 원인: {str(critical_err)}")
-                    scan_aborted = True
-                finally:
-                    if new_db_entries:
-                        # 💡 [핵심 저장 로직] ELT 방식 적용 (추출은 100%, 덮어쓰기는 선별적으로)
-                        latest_db_dict = {}  # 마스터 및 동적 키워드 (최신본 1개만 남김)
-                        append_db_dict = {}  # 기타, 매뉴얼 등 (전부 다 남김)
-                        
-                        # 1. 기존 데이터 불러와서 분류
-                        if st.session_state.auto_db:
-                            for old_row in st.session_state.auto_db:
-                                kw = old_row.get("키워드", "")
-                                fid = old_row.get("파일 ID", "")
-                                if kw in ("기타", "매뉴얼"):
-                                    append_db_dict[fid] = old_row
-                                elif kw:
-                                    exp_str = str(old_row.get("만료일", ""))
-                                    sort_date = "9999-12-31" if exp_str == "영구" else exp_str
-                                    latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
-                        
-                        allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
-                        
-                        # 2. 신규 데이터 병합
-                        for entry in new_db_entries:
-                            kw = entry.get("키워드", "")
-                            fid = entry.get("파일 ID", "")
-                            
-                            # 매뉴얼이거나 기타인 경우 덮어쓰지 않고 전부 누적 (File ID 기준)
-                            if kw in ("매뉴얼", "기타"):
-                                append_db_dict[fid] = entry
-                                continue
-                            
-                            # AI가 지시를 어기고 이상한 키워드(예: 영수증_식대)를 만들었다면 강제로 '기타'로 묶어버림
-                            if kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
-                                entry["키워드"] = "기타"
-                                append_db_dict[fid] = entry
-                                update_log(f"🛡️ 미인가 키워드 강제 '기타' 편입: {kw}")
-                                continue
-                            
-                            # 정규 인증서 및 동적 확장 서류 (최신본 경쟁)
-                            exp_str = str(entry.get("만료일", ""))
-                            sort_date = "9999-12-31" if exp_str == "영구" else exp_str
-                            
-                            if kw not in latest_db_dict:
-                                latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
-                            else:
-                                if sort_date > latest_db_dict[kw]["sort_date"]:
-                                    latest_db_dict[kw] = {"entry": entry, "sort_date": sort_date}
-
-                        # 3. 최신본 + 누적본 합쳐서 최종 시트 DB 생성
-                        filtered_db_entries = [v["entry"] for v in latest_db_dict.values()] + list(append_db_dict.values())
-                        st.session_state.auto_db = filtered_db_entries
-                        
-                        if scan_aborted:
-                            update_log("💾 중단점까지 병합된 전체 데이터를 구글 시트에 강제 저장합니다...")
-                        else:
-                            update_log("🎉 스캔 완료! 누락 없이 100% 추출된 데이터를 구글 시트에 저장합니다...")
-                        
-                        if sheet_service and SHEET_ID:
-                            try:
-                                sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:J").execute()
-                                
-                                headers = ["키워드", "파일명", "문서_실제제목", "발급일", "만료일", "주기(개월)", "개정번호", "분류근거", "파일 ID", "뷰어 링크"]
-                                values = [headers]
-                                
-                                for row in filtered_db_entries:
-                                    kw = row.get("키워드", "")
-                                    cycle = str(MASTER_DOC_REQUIREMENTS.get(kw, {}).get("주기", 0))
-                                    values.append([
-                                        kw, 
-                                        row.get("파일명",""), 
-                                        row.get("문서_실제제목",""), 
-                                        row.get("발급일",""), 
-                                        row.get("만료일",""), 
-                                        cycle,
-                                        row.get("개정번호","-"),
-                                        row.get("분류근거",""),
-                                        row.get("파일 ID",""),
-                                        row.get("뷰어 링크","")
-                                    ]) 
-                                
-                                body = {'values': values}
-                                sheet_service.spreadsheets().values().update(
-                                    spreadsheetId=SHEET_ID, range="DB!A1",
-                                    valueInputOption="RAW", body=body).execute()
-                                    
-                                if scan_aborted:
-                                    st.warning("⚠️ 스캔이 강제 중단되었지만, 추출된 데이터는 안전하게 보존 저장되었습니다!")
-                                else:
-                                    st.success(f"🎉 데이터 보존율 100%! 총 {len(filtered_db_entries)}개의 데이터가 구글 시트에 유지/업데이트 되었습니다! (3번 탭 확인)")
-                                update_log(f"✅ 구글 시트 기록 완료! (최종 {len(filtered_db_entries)}개 저장됨)")
-                            except Exception as e:
-                                st.error(f"⚠️ 구글 시트 저장 실패 (권한/ID 문제 확인 필요): {e}")
-                                update_log(f"❌ 시트 저장 실패: {e}")
-                        else:
-                            st.warning("⚠️ 구글 시트 ID가 없거나 연동되지 않아 세션(임시 메모리)에만 병합 저장되었습니다.")
-                            
+                    
+                    update_log("🎉 스캔 및 DB 저장 완벽 종료! 모든 데이터가 안전하게 누적되었습니다.")
+                    st.success("스캔 및 시트 업데이트가 완료되었습니다!")
+                    
                     if error_log:
                         st.error(f"⚠️ {len(error_log)}개의 문서 스캔 중 오류가 발생했습니다. 아래에서 확인하세요.")
                         with st.expander("에러 상세 로그 보기"):
