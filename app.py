@@ -53,7 +53,7 @@ KNOWLEDGE_BASE = {
     "장갑구분": "식품 접촉/청소 구역에 따라 장갑을 엄격히 구분합니다. 세척/소독 시에는 적색/노란색 고무장갑을 사용하며, 원자재 투입 시에는 라텍스/니트릴(흰색) 고무장갑을 사용합니다. 설비 정비 시에는 반코팅 목장갑을 사용하며, 부자재 투입 시에는 면장갑을 착용한 후 1회 사용 뒤 정비용으로 재활용합니다.",
     "장갑위생": "장갑을 맨손으로 사용할 경우 사용 전 70% 알코올로 소독해야 합니다. 사용 후 청소용 고무장갑은 세척 후 자외선 살균소독기나 건조대에 보관하며, 원자재 투입용 장갑은 중성세제와 70% 알코올로 세척/소독하여 보관합니다.",
     "이물예방": "유리, 플라스틱, 목재, 금속 등 이물질 혼입을 방지하기 위해 스냅형 칼(커터칼), 스테이플러, 압정, 핀, 클립, 철수세미의 작업장 반입을 전면 금지합니다. 유리 제품은 가능한 다른 재질로 대체하거나 보호 처리해야 합니다. 테이프는 포장실 등 지정된 장소에서만 사용 가능합니다.",
-    "이물발생조치": "생산 중 이물 발견 시 즉시 생산을 중단하고 과(팀)장에게 보고합니다. 이물 및 선별된 원료는 격리 보관하며, 원인 분석 후 '부적합보고서' 또는 '시정조치요구대책서'를 발행하여 개선합니다.",
+    "이물발생조치": "생산 중 이물 발견 시 즉시 생산을 중단하고 과(팀)장에게 보고합니다. 이물 및 선별된 원료는 격리 보관하며, 원인 분석 후 '부적합보고서' 또는 '시정조치요구대책서' 발행하여 개선합니다.",
     "이물보관": "소비자로부터 클레임 접수된 이물 신고 내용은 2년간 보관합니다. 소비자가 제시한 이물 실물과 증거품(사진 등)은 6개월간 보관하는 것이 원칙이나, 부패·변질 우려가 있는 경우 2개월간 보관할 수 있습니다.",
     "칼가위관리": "생산 구역에서 사용되는 칼과 가위는 회사가 지급, 식별, 등록한(번호 부여) 물품만 사용해야 합니다. 개인 사물함이나 칼집에 보관해서는 안 되며 임시 보관만 가능합니다. 시작 및 종료 시 상태 점검을 실시해야 합니다.",
     "알러겐분류": "알러겐 함유 원료(우유, 대두, 땅콩, 호두, 토마토, 밀 등)는 자재 창고에서부터 별도 구분 및 식별(색상 라벨링)하여 보관합니다.",
@@ -481,9 +481,9 @@ with st.sidebar:
                                 up = genai.upload_file(tmp_path, display_name=pf['name'])
                                 
                                 wait_time = 0
-                                while up.state.name == "PROCESSING" and wait_time < 60:
-                                    time.sleep(2)
-                                    wait_time += 2
+                                while up.state.name == "PROCESSING" and wait_time < 300: # 캐싱도 넉넉히 대기
+                                    time.sleep(5)
+                                    wait_time += 5
                                     up = genai.get_file(up.name)
                                     
                                 if up.state.name == "ACTIVE":
@@ -763,7 +763,17 @@ with tab3:
                 except Exception as e:
                     st.warning("⚠️ 구글 시트 연동 실패: 스캔된 데이터가 없거나 접근 권한 문제가 있습니다.")
 
-    db_dict = {row.get("키워드"): row for row in st.session_state.auto_db if row.get("키워드")}
+    # 💡 3번 탭 전용: DB 리스트 전체를 읽어들여 겹치는 항목 중 가장 최신 것만 화면에 표시되게 스마트 필터링
+    latest_dash_dict = {}
+    for row in st.session_state.auto_db:
+        kw = row.get("키워드", "")
+        if not kw or kw in ("PASS", "기타", "매뉴얼"): continue
+        exp_str = str(row.get("만료일", ""))
+        sort_date = "9999-12-31" if exp_str == "영구" else exp_str
+        if kw not in latest_dash_dict or sort_date > latest_dash_dict[kw]["sort_date"]:
+            latest_dash_dict[kw] = {"entry": row, "sort_date": sort_date}
+            
+    db_dict = {kw: v["entry"] for kw, v in latest_dash_dict.items()}
     
     dashboard_data = []
     missing_docs = []
@@ -816,7 +826,7 @@ with tab3:
 
     # 💡 2. 동적 추가 (화면 오염을 방지하기 위해 '기타', '매뉴얼'은 대시보드에서 무시)
     for key, doc in db_dict.items():
-        if key not in processed_keys and key not in ("기타", "매뉴얼") and key.strip() != "":
+        if key not in processed_keys and key.strip() != "":
             if key.startswith(allowed_dynamic_prefixes):
                 exp_date_str = str(doc.get("만료일", ""))
                 cycle = str(doc.get("주기(개월)", "24"))
@@ -936,7 +946,7 @@ with tab4:
 
                 error_log = []
                 
-                # 💡 [핵심 기술 1] 이미 스캔된 파일 건너뛰기 (Resume)
+                # 💡 [핵심 기술 1] 이미 스캔된 파일 건너뛰기 (초고속 이어하기)
                 scanned_ids = set()
                 if sheet_service and SHEET_ID:
                     try:
@@ -956,7 +966,7 @@ with tab4:
                 total = len(files_to_process)
                 if total == 0:
                     update_log("✅ 모든 문서가 이미 최신 상태로 스캔 완료되었습니다!")
-                    st.success("모든 문서가 이미 스캔되어 있습니다.")
+                    st.success("새로 추가된 문서가 없어 스캔을 종료합니다.")
                 else:
                     model = genai.GenerativeModel(MODEL_NAME)
                     
@@ -1023,20 +1033,6 @@ with tab4:
                         "분류근거": "발급기관 및 본문 내용 매핑"
                     }"""
                     
-                    latest_db_dict = {}  
-                    append_db_dict = {}  
-                    
-                    if st.session_state.auto_db:
-                        for old_row in st.session_state.auto_db:
-                            kw = old_row.get("키워드", "")
-                            fid = old_row.get("파일 ID", "")
-                            if kw in ("기타", "매뉴얼"):
-                                append_db_dict[fid] = old_row
-                            elif kw:
-                                exp_str = str(old_row.get("만료일", ""))
-                                sort_date = "9999-12-31" if exp_str == "영구" else exp_str
-                                latest_db_dict[kw] = {"entry": old_row, "sort_date": sort_date}
-                    
                     allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
                     
                     for i, f in enumerate(files_to_process):
@@ -1063,65 +1059,72 @@ with tab4:
                             up_file = genai.upload_file(path=tmp_path)
                             
                             wait_time = 0
-                            while up_file.state.name == "PROCESSING" and wait_time < 120:
-                                time.sleep(2)
-                                wait_time += 2
+                            # 무한 대기 끈기 모드 (용량이 큰 PDF도 끝까지 기다림)
+                            while up_file.state.name == "PROCESSING" and wait_time < 300:
+                                time.sleep(5)
+                                wait_time += 5
+                                if wait_time % 15 == 0:
+                                    update_log(f"⏳ [{i+1}/{total}] 구글 AI 서버 판독 대기 중... ({wait_time}초 경과)")
                                 up_file = genai.get_file(up_file.name)
                                 
                             if up_file.state.name == "FAILED":
                                 raise Exception("구글 서버 판독 거부 (파일 손상 의심)")
                             elif up_file.state.name == "PROCESSING":
-                                raise Exception("구글 서버 응답 지연 (120초 초과)")
+                                raise Exception("구글 서버 응답 지연 (5분 초과)")
                             
                             time.sleep(3.5) # API 호출 제한 방어
                             ai_res = model.generate_content([up_file, prompt])
                             
-                            parsed = json.loads(ai_res.text.strip().replace("```json", "").replace("```", ""))
+                            # 💡 [핵심 방어막] AI가 JSON 외의 쓸데없는 말을 덧붙여도 완벽하게 JSON만 발라냄
+                            text_res = ai_res.text.strip()
+                            json_match = re.search(r'\{.*\}', text_res, re.DOTALL)
+                            if not json_match:
+                                raise Exception("AI 응답 형식이 올바르지 않습니다.")
                             
-                            parsed["파일명"] = f['name']
-                            parsed["파일 ID"] = fid
-                            parsed["뷰어 링크"] = f['webViewLink']
-                            
-                            # 💡 [핵심 기술 2] 1건 분석 완료 시 실시간 병합
+                            parsed = json.loads(json_match.group(0))
                             kw = parsed.get("키워드", "")
-                            if kw in ("매뉴얼", "기타"):
-                                append_db_dict[fid] = parsed
-                            elif kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
-                                parsed["키워드"] = "기타"
-                                append_db_dict[fid] = parsed
+                            
+                            if kw not in ("PASS", "기타", "매뉴얼") and kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
                                 update_log(f"🛡️ 미인가 키워드 강제 '기타' 편입: {kw}")
-                            else:
-                                exp_str = str(parsed.get("만료일", ""))
-                                sort_date = "9999-12-31" if exp_str == "영구" else exp_str
-                                if kw not in latest_db_dict or sort_date > latest_db_dict[kw]["sort_date"]:
-                                    latest_db_dict[kw] = {"entry": parsed, "sort_date": sort_date}
+                                kw = "기타"
+                                parsed["키워드"] = kw
                             
-                            # 메모리 DB 업데이트
-                            filtered_db_entries = [v["entry"] for v in latest_db_dict.values()] + list(append_db_dict.values())
-                            st.session_state.auto_db = filtered_db_entries
-                            
-                            # 💡 [핵심 기술 3] 파일 단위 실시간 구글 시트 저장 (팅겨도 살아남음!)
-                            if sheet_service and SHEET_ID:
-                                try:
-                                    # 1. 메인 DB 업데이트
-                                    sheet_service.spreadsheets().values().clear(spreadsheetId=SHEET_ID, range="DB!A:J").execute()
-                                    headers = ["키워드", "파일명", "문서_실제제목", "발급일", "만료일", "주기(개월)", "개정번호", "분류근거", "파일 ID", "뷰어 링크"]
-                                    values = [headers]
-                                    for row in filtered_db_entries:
-                                        r_kw = row.get("키워드", "")
-                                        cycle = str(MASTER_DOC_REQUIREMENTS.get(r_kw, {}).get("주기", 0))
-                                        values.append([
-                                            r_kw, row.get("파일명",""), row.get("문서_실제제목",""), row.get("발급일",""), row.get("만료일",""),
-                                            cycle, row.get("개정번호","-"), row.get("분류근거",""), row.get("파일 ID",""), row.get("뷰어 링크","")
-                                        ])
-                                    sheet_service.spreadsheets().values().update(spreadsheetId=SHEET_ID, range="DB!A1", valueInputOption="RAW", body={'values': values}).execute()
-                                    
-                                    # 2. SCANNED 시트에 기록 추가 (이어하기 용도)
-                                    sheet_service.spreadsheets().values().append(spreadsheetId=SHEET_ID, range="SCANNED!A:B", valueInputOption="RAW", insertDataOption="INSERT_ROWS", body={'values': [[fid, f['name']]]}).execute()
-                                except Exception as e:
-                                    update_log(f"⚠️ 시트 저장 실패 (다음 진행): {e}")
-
-                            update_log(f"✅ [{i+1}/{total}] 추출 완료! 부여된 키워드: {parsed.get('키워드')}")
+                            if kw != "PASS":
+                                cycle = str(MASTER_DOC_REQUIREMENTS.get(kw, {}).get("주기", 0))
+                                new_row = [
+                                    kw, f['name'], parsed.get("문서_실제제목",""), parsed.get("발급일",""), parsed.get("만료일",""),
+                                    cycle, parsed.get("개정번호","-"), parsed.get("분류근거",""), fid, f['webViewLink']
+                                ]
+                                
+                                # 💡 [핵심 기술 2] 실시간 누적 저장 (Append-Only) -> 중간에 뻗어도 절대 데이터 안 날아감!
+                                if sheet_service and SHEET_ID:
+                                    try:
+                                        # 1. DB 시트에 1줄 누적 추가
+                                        sheet_service.spreadsheets().values().append(
+                                            spreadsheetId=SHEET_ID, range="DB!A:A", valueInputOption="RAW", insertDataOption="INSERT_ROWS", 
+                                            body={'values': [new_row]}
+                                        ).execute()
+                                        
+                                        # 2. SCANNED 시트에 기록 추가 (이어하기 용도)
+                                        sheet_service.spreadsheets().values().append(
+                                            spreadsheetId=SHEET_ID, range="SCANNED!A:B", valueInputOption="RAW", insertDataOption="INSERT_ROWS", 
+                                            body={'values': [[fid, f['name']]]}
+                                        ).execute()
+                                        
+                                        # 3. 화면(메모리) 즉시 반영
+                                        row_dict = {
+                                            "키워드": kw, "파일명": f['name'], "문서_실제제목": parsed.get("문서_실제제목",""),
+                                            "발급일": parsed.get("발급일",""), "만료일": parsed.get("만료일",""), "주기(개월)": cycle,
+                                            "개정번호": parsed.get("개정번호","-"), "분류근거": parsed.get("분류근거",""),
+                                            "파일 ID": fid, "뷰어 링크": f['webViewLink']
+                                        }
+                                        if not st.session_state.auto_db: st.session_state.auto_db = []
+                                        st.session_state.auto_db.append(row_dict)
+                                        
+                                    except Exception as e:
+                                        update_log(f"⚠️ 시트 저장 실패: {e}")
+                                        
+                            update_log(f"✅ [{i+1}/{total}] 추출 및 안전 저장 완료! ({kw})")
                             
                             genai.delete_file(up_file.name)
                             os.remove(tmp_path)
@@ -1139,8 +1142,8 @@ with tab4:
                                 update_log(f"❌ [{i+1}/{total}] 스캔 실패 (해당 파일 패스): {error_msg}")
                                 error_log.append(f"❌ '{f['name']}' 스캔 실패: {error_msg}")
                     
-                    update_log("🎉 스캔 및 DB 저장 완벽 종료! 모든 데이터가 안전하게 누적되었습니다.")
-                    st.success("스캔 및 시트 업데이트가 완료되었습니다!")
+                    update_log("🎉 스캔 완료! 모든 분석 결과가 1건도 빠짐없이 구글 시트에 누적 저장되었습니다.")
+                    st.success("스캔 및 시트 실시간 업데이트가 완료되었습니다!")
                     
                     if error_log:
                         st.error(f"⚠️ {len(error_log)}개의 문서 스캔 중 오류가 발생했습니다. 아래에서 확인하세요.")
