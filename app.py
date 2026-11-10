@@ -53,7 +53,7 @@ KNOWLEDGE_BASE = {
     "장갑구분": "식품 접촉/청소 구역에 따라 장갑을 엄격히 구분합니다. 세척/소독 시에는 적색/노란색 고무장갑을 사용하며, 원자재 투입 시에는 라텍스/니트릴(흰색) 고무장갑을 사용합니다. 설비 정비 시에는 반코팅 목장갑을 사용하며, 부자재 투입 시에는 면장갑을 착용한 후 1회 사용 뒤 정비용으로 재활용합니다.",
     "장갑위생": "장갑을 맨손으로 사용할 경우 사용 전 70% 알코올로 소독해야 합니다. 사용 후 청소용 고무장갑은 세척 후 자외선 살균소독기나 건조대에 보관하며, 원자재 투입용 장갑은 중성세제와 70% 알코올로 세척/소독하여 보관합니다.",
     "이물예방": "유리, 플라스틱, 목재, 금속 등 이물질 혼입을 방지하기 위해 스냅형 칼(커터칼), 스테이플러, 압정, 핀, 클립, 철수세미의 작업장 반입을 전면 금지합니다. 유리 제품은 가능한 다른 재질로 대체하거나 보호 처리해야 합니다. 테이프는 포장실 등 지정된 장소에서만 사용 가능합니다.",
-    "이물발생조치": "생산 중 이물 발견 시 즉시 생산을 중단하고 과(팀)장에게 보고합니다. 이물 및 선별된 원료는 격리 보관하며, 원인 분석 후 '부적합보고서' 또는 '시정조치요구대책서' 발행하여 개선합니다.",
+    "이물발생조치": "생산 중 이물 발견 시 즉시 생산을 중단하고 과(팀)장에게 보고합니다. 이물 및 선별된 원료는 격리 보관하며, 원인 분석 후 '부적합보고서' 또는 '시정조치요구대책서'를 발행하여 개선합니다.",
     "이물보관": "소비자로부터 클레임 접수된 이물 신고 내용은 2년간 보관합니다. 소비자가 제시한 이물 실물과 증거품(사진 등)은 6개월간 보관하는 것이 원칙이나, 부패·변질 우려가 있는 경우 2개월간 보관할 수 있습니다.",
     "칼가위관리": "생산 구역에서 사용되는 칼과 가위는 회사가 지급, 식별, 등록한(번호 부여) 물품만 사용해야 합니다. 개인 사물함이나 칼집에 보관해서는 안 되며 임시 보관만 가능합니다. 시작 및 종료 시 상태 점검을 실시해야 합니다.",
     "알러겐분류": "알러겐 함유 원료(우유, 대두, 땅콩, 호두, 토마토, 밀 등)는 자재 창고에서부터 별도 구분 및 식별(색상 라벨링)하여 보관합니다.",
@@ -458,16 +458,17 @@ with st.sidebar:
                     uploaded_laws = []
                     target_pdfs = []
                     
+                    # 💡 [캐싱 최적화] AI 뇌용량 초과 방지! 챗봇 뇌에는 두꺼운 '매뉴얼'만 넣습니다.
                     for row in st.session_state.auto_db:
                         kw = row.get("키워드", "")
-                        if kw == "매뉴얼" or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
+                        if kw == "매뉴얼":
                             fid = row.get("파일 ID")
                             fname = row.get("문서_실제제목") or row.get("파일명")
                             if fid:
                                 target_pdfs.append({"id": fid, "name": fname})
                     
                     if not target_pdfs:
-                        st.warning("⚠️ 캐싱할 최신 문서가 DB에 없습니다. 4번 탭에서 스캔 및 저장을 먼저 진행해주세요.")
+                        st.warning("⚠️ 캐싱할 매뉴얼 문서가 DB에 없습니다. 4번 탭에서 스캔 및 저장을 먼저 진행해주세요.")
                     else:
                         cache_progress = st.progress(0)
                         
@@ -481,7 +482,7 @@ with st.sidebar:
                                 up = genai.upload_file(tmp_path, display_name=pf['name'])
                                 
                                 wait_time = 0
-                                while up.state.name == "PROCESSING" and wait_time < 300: # 캐싱도 넉넉히 대기
+                                while up.state.name == "PROCESSING" and wait_time < 300: 
                                     time.sleep(5)
                                     wait_time += 5
                                     up = genai.get_file(up.name)
@@ -946,7 +947,6 @@ with tab4:
 
                 error_log = []
                 
-                # 💡 [핵심 기술 1] 이미 스캔된 파일 건너뛰기 (초고속 이어하기)
                 scanned_ids = set()
                 if sheet_service and SHEET_ID:
                     try:
@@ -1059,7 +1059,6 @@ with tab4:
                             up_file = genai.upload_file(path=tmp_path)
                             
                             wait_time = 0
-                            # 무한 대기 끈기 모드 (용량이 큰 PDF도 끝까지 기다림)
                             while up_file.state.name == "PROCESSING" and wait_time < 300:
                                 time.sleep(5)
                                 wait_time += 5
@@ -1075,7 +1074,6 @@ with tab4:
                             time.sleep(3.5) # API 호출 제한 방어
                             ai_res = model.generate_content([up_file, prompt])
                             
-                            # 💡 [핵심 방어막] AI가 JSON 외의 쓸데없는 말을 덧붙여도 완벽하게 JSON만 발라냄
                             text_res = ai_res.text.strip()
                             json_match = re.search(r'\{.*\}', text_res, re.DOTALL)
                             if not json_match:
@@ -1096,22 +1094,18 @@ with tab4:
                                     cycle, parsed.get("개정번호","-"), parsed.get("분류근거",""), fid, f['webViewLink']
                                 ]
                                 
-                                # 💡 [핵심 기술 2] 실시간 누적 저장 (Append-Only) -> 중간에 뻗어도 절대 데이터 안 날아감!
                                 if sheet_service and SHEET_ID:
                                     try:
-                                        # 1. DB 시트에 1줄 누적 추가
                                         sheet_service.spreadsheets().values().append(
                                             spreadsheetId=SHEET_ID, range="DB!A:A", valueInputOption="RAW", insertDataOption="INSERT_ROWS", 
                                             body={'values': [new_row]}
                                         ).execute()
                                         
-                                        # 2. SCANNED 시트에 기록 추가 (이어하기 용도)
                                         sheet_service.spreadsheets().values().append(
                                             spreadsheetId=SHEET_ID, range="SCANNED!A:B", valueInputOption="RAW", insertDataOption="INSERT_ROWS", 
                                             body={'values': [[fid, f['name']]]}
                                         ).execute()
                                         
-                                        # 3. 화면(메모리) 즉시 반영
                                         row_dict = {
                                             "키워드": kw, "파일명": f['name'], "문서_실제제목": parsed.get("문서_실제제목",""),
                                             "발급일": parsed.get("발급일",""), "만료일": parsed.get("만료일",""), "주기(개월)": cycle,
@@ -1212,8 +1206,9 @@ with tab5:
                     # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
                     st.write("📝 **[Agent C]** 다각도 실무 통찰 반영 답변 생성 중...")
                     
+                    # 💡 [핵심 최적화] 챗봇의 뇌 터짐 방지! 과거 대화는 최근 6개(사용자 3번, AI 3번)까지만 묶어서 넘깁니다.
                     history_for_gemini = []
-                    for m in st.session_state.chat_messages[:-1]:
+                    for m in st.session_state.chat_messages[-6:]:
                         if m["role"] == "assistant":
                             if "안녕하세요!" in m["content"]: continue
                             history_for_gemini.append({"role": "model", "parts": [m["content"]]})
