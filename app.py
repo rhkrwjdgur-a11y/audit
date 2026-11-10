@@ -57,7 +57,7 @@ KNOWLEDGE_BASE = {
     "이물보관": "소비자로부터 클레임 접수된 이물 신고 내용은 2년간 보관합니다. 소비자가 제시한 이물 실물과 증거품(사진 등)은 6개월간 보관하는 것이 원칙이나, 부패·변질 우려가 있는 경우 2개월간 보관할 수 있습니다.",
     "칼가위관리": "생산 구역에서 사용되는 칼과 가위는 회사가 지급, 식별, 등록한(번호 부여) 물품만 사용해야 합니다. 개인 사물함이나 칼집에 보관해서는 안 되며 임시 보관만 가능합니다. 시작 및 종료 시 상태 점검을 실시해야 합니다.",
     "알러겐분류": "알러겐 함유 원료(우유, 대두, 땅콩, 호두, 토마토, 밀 등)는 자재 창고에서부터 별도 구분 및 식별(색상 라벨링)하여 보관합니다.",
-    "알러겐취급": "알러겐 원·부자재의 계량, 배합에 사용되는 작업 도구는 전용으로 구분하고 식별 표시 부착하여 교차오염을 방지합니다.",
+    "알러겐취급": "알러겐 원·부자재의 계량, 배합에 사용되는 작업 도구는 전용으로 구분하고 식별 표시를 부착하여 교차오염을 방지합니다.",
     "알러겐검증": "CIP 후 알러겐 물질 잔류 여부는 연 1회 이상 검증(Reveal 3D 등 키트 활용)하며, 양성 판정 시 CIP 효과성 증대 방안을 검토합니다.",
     "해동장소": "냉동원료는 냉장 창고, 원자재 보관 창고, 작업장 내 임시 보관 공간에서 선반이나 파레트 위에 포장을 유지한 채 해동해야 정석이며, 야외나 비위생적 공간에서의 해동은 금지됩니다.",
     "해동온도및시간": "해동은 냉장 조건(0~10℃)에서 14일 이내, 실온 조건(1~35℃)에서 2일 이내에 완료되어야 합니다.",
@@ -458,8 +458,7 @@ with st.sidebar:
                     uploaded_laws = []
                     target_pdfs = []
                     
-                    # 💡 [캐싱 최적화] AI 뇌용량 초과 방지! 
-                    # 수백 장씩 쌓이는 쓰레기 데이터는 빼고, 심층 답변에 꼭 필요한 '매뉴얼(기준서)'과 '핵심 인증서'만 핀셋으로 골라 넣습니다!
+                    # 💡 [캐싱 다이어트] AI 뇌가 터지지 않게 '매뉴얼/기준서'와 '핵심 인증'만 핀셋 캐싱
                     for row in st.session_state.auto_db:
                         kw = row.get("키워드", "")
                         if kw in ("매뉴얼", "기준서", "선행요건") or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
@@ -467,6 +466,11 @@ with st.sidebar:
                             fname = row.get("문서_실제제목") or row.get("파일명")
                             if fid:
                                 target_pdfs.append({"id": fid, "name": fname})
+                    
+                    # 💡 [토큰 폭발 방어 캡] 파일이 수십 개 이상 넘어가면 최신 15개까지만 커트라인으로 끊습니다.
+                    if len(target_pdfs) > 15:
+                        target_pdfs = target_pdfs[:15]
+                        st.warning("⚠️ 핵심 문서가 너무 많아 AI 뇌 용량 초과 방지를 위해 최신 중요 문서 15개만 압축 캐싱합니다.")
                     
                     if not target_pdfs:
                         st.warning("⚠️ 캐싱할 매뉴얼 문서가 DB에 없습니다. 4번 탭에서 스캔 및 저장을 먼저 진행해주세요.")
@@ -783,7 +787,6 @@ with tab3:
     
     allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
     
-    # 1. 고정 항목 (마스터 리스트 기준 점검)
     for key, meta in MASTER_DOC_REQUIREMENTS.items():
         processed_keys.add(key)
         row_data = {
@@ -825,7 +828,6 @@ with tab3:
         
         dashboard_data.append(row_data)
 
-    # 2. 동적 추가 
     for key, doc in db_dict.items():
         if key not in processed_keys and key.strip() != "":
             if key.startswith(allowed_dynamic_prefixes):
@@ -1206,6 +1208,7 @@ with tab5:
                     # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
                     st.write("📝 **[Agent C]** 다각도 실무 통찰 반영 답변 생성 중...")
                     
+                    # 💡 [토큰 폭발 방어 캡] 과거 대화는 최근 6개(사용자 3번, AI 3번)까지만 묶어서 챗봇 뇌의 과부하를 막습니다.
                     history_for_gemini = []
                     for m in st.session_state.chat_messages[-6:]:
                         if m["role"] == "assistant":
