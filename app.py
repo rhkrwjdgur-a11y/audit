@@ -37,8 +37,9 @@ CACHE_META_FILE = "haccp_agent_cache.json"
 KNOWLEDGE_BASE = {
     "공장현재인증현황": """[아산공장 전체 HACCP 인증 보유 현황]
     1. 유가공업(우유, 발효유 등) 및 식품제조가공업(가공두유, 원액두유, 음료 등) 등 다수의 품목별 HACCP 인증을 보유 중임.
-    2. [기인증 공정 범위 팩트]:
-       - 원액두유/가공두유/과채음료 등: 살균 및 무균 포장(포장지 멸균) 공정까지 전체 라인 인증 완료.
+    2. [기인증 공정 범위 팩트 - 품목별 엄격 구분]:
+       - 🚨 원액두유: 여과 및 살균 공정까지만 인증 완료. (멸균 및 포장 공정 인증 없음 ➔ 이 상태로는 팩 완제품 출하 불가)
+       - 가공두유/과채음료 등: 살균 및 무균 포장(포장지 멸균) 공정까지 전체 라인 인증 완료.
        - 유제품 살균 라인(CCP-1B 살균): 일반우유, 가공유, 유크림 품목에 한정하여 인증됨. (유당분해우유는 살균 라인 인증 없음)
        - 유제품 멸균 라인(CCP-1B 멸균): 유당분해우유 포함 멸균 제품군 전체 인증됨.""",
        
@@ -458,7 +459,6 @@ with st.sidebar:
                     uploaded_laws = []
                     target_pdfs = []
                     
-                    # 💡 [캐싱 다이어트] AI 뇌가 터지지 않게 '매뉴얼/기준서'와 '핵심 인증'만 핀셋 캐싱
                     for row in st.session_state.auto_db:
                         kw = row.get("키워드", "")
                         if kw in ("매뉴얼", "기준서", "선행요건") or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
@@ -467,7 +467,6 @@ with st.sidebar:
                             if fid:
                                 target_pdfs.append({"id": fid, "name": fname})
                     
-                    # 💡 [토큰 폭발 방어 캡] 파일이 수십 개 이상 넘어가면 최신 15개까지만 커트라인으로 끊습니다.
                     if len(target_pdfs) > 15:
                         target_pdfs = target_pdfs[:15]
                         st.warning("⚠️ 핵심 문서가 너무 많아 AI 뇌 용량 초과 방지를 위해 최신 중요 문서 15개만 압축 캐싱합니다.")
@@ -562,8 +561,8 @@ with st.sidebar:
                 execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["수질검사", "저수조청소"])
             if st.button("방역 관리 리포트 (GW)", use_container_width=True): 
                 execute_exact_match("방제 레포트", "방충방서 관련 서류", "방역 관리 리포트", ["방충방서_월간"])
-            if st.button("종사자 보건증 및 수료증", use_container_width=True): 
-                execute_exact_match("보건증", "선행요건", "", ["보건증", "교육"])
+            if st.button("종사자 법정/보건증 및 수료증", use_container_width=True): 
+                execute_exact_match("보건증/교육", "선행요건", "", ["보건증", "법정위생교육", "HACCP정기교육", "교육"])
             if st.button("손 위생 및 낙하세균 (GW)", use_container_width=True): 
                 execute_exact_match("위생 검사", "", "낙하세균 검사 결과")
             if st.button("냉장/냉동 창고 온도 일지 (GW)", use_container_width=True): 
@@ -586,8 +585,8 @@ with st.sidebar:
                 execute_exact_match("품질검사", "", "일반검사 일보")
             if st.button("클레임 현황 및 시정조치 (GW)", use_container_width=True): 
                 execute_exact_match("클레임", "", "부적합 현황 보고")
-            if st.button("교육 훈련 및 모의회수 기록", use_container_width=True): 
-                execute_exact_match("교육/회수", "모의회수", "위생교육", ["법정위생교육", "HACCP교육", "모의회수"])
+            if st.button("모의회수 기록", use_container_width=True): 
+                execute_exact_match("모의회수", "모의회수", "모의회수", ["모의회수"])
             if st.button("PL보험 및 영업배상책임보험", use_container_width=True): 
                 execute_exact_match("책임보험", "인증서", "", ["책임보험"])
 
@@ -747,7 +746,6 @@ with tab2:
 # ----------------- TAB 3: 대시보드 -----------------
 with tab3:
     st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
-    st.caption("※ 마스터 기준표(Top-down)에 따라 전체 필수 전산 서류의 누락 및 갱신 상태를 점검합니다.")
     
     if not st.session_state.auto_db:
         sheet_service = get_sheets_service()
@@ -772,7 +770,7 @@ with tab3:
     latest_dash_dict = {}
     for row in st.session_state.auto_db:
         kw = row.get("키워드", "")
-        if not kw or kw in ("PASS", "기타", "매뉴얼"): continue
+        if not kw or kw in ("PASS", "기타", "매뉴얼", "일반수료증"): continue
         exp_str = str(row.get("만료일", ""))
         sort_date = "9999-12-31" if exp_str == "영구" else exp_str
         if kw not in latest_dash_dict or sort_date > latest_dash_dict[kw]["sort_date"]:
@@ -785,7 +783,8 @@ with tab3:
     today = datetime.date.today()
     processed_keys = set()
     
-    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
+    # 💡 무한 확장 허용 접두사에 업종별 위생교육 추가
+    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "법정위생교육_", "HACCP교육_")
     
     for key, meta in MASTER_DOC_REQUIREMENTS.items():
         processed_keys.add(key)
@@ -830,9 +829,11 @@ with tab3:
 
     for key, doc in db_dict.items():
         if key not in processed_keys and key.strip() != "":
-            if key.startswith(allowed_dynamic_prefixes):
+            if key.startswith(allowed_dynamic_prefixes) or key == "HACCP정기교육":
                 exp_date_str = str(doc.get("만료일", ""))
                 cycle = str(doc.get("주기(개월)", "24"))
+                if key.startswith("법정위생교육_") or key == "HACCP정기교육":
+                    cycle = "12"
                 
                 dyn_row = {
                     "구분(키워드)": key,
@@ -865,18 +866,63 @@ with tab3:
 
     df_dashboard = pd.DataFrame(dashboard_data)
     
-    def style_status(val):
-        if "누락" in str(val): return 'color: white; background-color: #000000; font-weight:bold'
-        if "경과" in str(val): return 'color: white; background-color: #ef4444; font-weight:bold'
-        if "임박" in str(val): return 'color: black; background-color: #fbbf24; font-weight:bold'
-        if "정상" in str(val): return 'color: white; background-color: #22c55e'
-        if "영구" in str(val): return 'color: white; background-color: #3b82f6'
-        return ''
+    # --- UI 개편 로직 ---
+    if not df_dashboard.empty:
+        expired_df = df_dashboard[df_dashboard["상태"].str.contains("경과|누락", na=False)]
+        warning_df = df_dashboard[df_dashboard["상태"].str.contains("임박", na=False)]
+        
+        # 1. 요약 위젯 및 긴급 알람
+        cols = st.columns(4)
+        cols[0].metric("전체 관리 서류", f"{len(df_dashboard)}건")
+        cols[1].metric("🚨 누락/경과 (즉시조치)", f"{len(expired_df)}건")
+        cols[2].metric("⚠️ 30일 내 만료 임박", f"{len(warning_df)}건")
+        cols[3].metric("✅ 영구/정상 서류", f"{len(df_dashboard) - len(expired_df) - len(warning_df)}건")
+        
+        if not expired_df.empty:
+            st.error(f"🚨 **즉시 갱신 또는 스캔이 필요한 서류가 {len(expired_df)}건 있습니다!**\n" + ", ".join(expired_df["서류명(마스터)"].tolist()))
+        if not warning_df.empty:
+            st.warning(f"⚠️ **한 달 내로 만료되는 서류가 {len(warning_df)}건 있습니다!**\n" + ", ".join(warning_df["서류명(마스터)"].tolist()))
 
-    st.dataframe(df_dashboard.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
-    
-    if missing_docs:
-        st.error(f"🚨 **치명적 누락 경고 ({len(missing_docs)}건):** 필수 마스터 서류가 드라이브에 없거나 스캔되지 않았습니다!\n\n" + " / ".join(missing_docs))
+        st.markdown("---")
+        
+        # 2. 그룹핑 로직
+        def style_status(val):
+            if "누락" in str(val): return 'color: white; background-color: #000000; font-weight:bold'
+            if "경과" in str(val): return 'color: white; background-color: #ef4444; font-weight:bold'
+            if "임박" in str(val): return 'color: black; background-color: #fbbf24; font-weight:bold'
+            if "정상" in str(val): return 'color: white; background-color: #22c55e'
+            if "영구" in str(val): return 'color: white; background-color: #3b82f6'
+            return ''
+
+        # 정기 검사 및 교육 (주기가 있는 서류 중 인증/보험 제외)
+        edu_insp_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["수질", "청소", "방충방서", "회수", "보건증", "위생교육", "HACCP정기교육"]))
+        df_edu_insp = df_dashboard[edu_insp_mask]
+        
+        # HACCP 및 특수 인증서
+        cert_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["HACCP_", "CHINA", "FSSC", "MILK", "무항생제", "유기", "FDA", "책임보험"]))
+        df_cert = df_dashboard[cert_mask]
+        
+        # 인허가 및 영구 서류
+        license_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["사업자", "공장등록", "건축물대장", "영업", "판매업", "급식소", "지하수개발"]))
+        df_license = df_dashboard[license_mask]
+        
+        # 기타 잔여 서류
+        handled_keys = set(df_edu_insp["구분(키워드)"]).union(set(df_cert["구분(키워드)"])).union(set(df_license["구분(키워드)"]))
+        df_others = df_dashboard[~df_dashboard["구분(키워드)"].isin(handled_keys)]
+        
+        # 3. 분할 표시
+        with st.expander("📅 1. 정기 검사 및 법정 의무 교육 (주기별 갱신 요망)", expanded=True):
+            st.dataframe(df_edu_insp.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
+            
+        with st.expander("🥇 2. HACCP 및 주요 시스템 인증서", expanded=True):
+            st.dataframe(df_cert.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
+            
+        with st.expander("📁 3. 영업 인허가 및 시설 등록증 (영구 보존 서류)", expanded=False):
+            st.dataframe(df_license.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
+            
+        if not df_others.empty:
+            with st.expander("💡 4. 기타 동적 추가 서류", expanded=False):
+                st.dataframe(df_others.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
 
 # ----------------- TAB 4: AI 마스터 DB -----------------
 with tab4:
@@ -972,6 +1018,7 @@ with tab4:
                 else:
                     model = genai.GenerativeModel(MODEL_NAME)
                     
+                    # 💡 [핵심 기술 3] 교육 수료증 핀셋 추출 룰 추가
                     prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
                     
                     [행동 강령 - 환각 원천 차단]
@@ -1013,21 +1060,26 @@ with tab4:
                     - FDA 식품시설등록(FFR) -> "FDA_FFR"
                     - FDA 공장등록(FCE) -> "FDA_FCE"
                     - 책임보험/영업배상/PL -> "책임보험"
+                    - 사내 규정, 기준서, 위기대응 절차 등 유효기간이 없는 지침서는 무조건 -> "매뉴얼"
+                    
+                    💡 [교육 수료증 분류 룰 (매우 중요)] 💡
+                    - 기존영업자 대상 식품/축산물 위생교육 수료증은 반드시 수료한 '업종'을 확인하여 묶어. (예: "법정위생교육_식품제조가공업", "법정위생교육_유가공업", "법정위생교육_수입식품")
+                    - HACCP 팀장교육 또는 HACCP 정기교육 수료증은 무조건 -> "HACCP정기교육"
+                    - 위 2가지 법정 의무교육이 아닌 1회성 특강, 실무 교육 등은 -> "일반수료증"
                     
                     💡 [무한 확장(Dynamic) 규칙] 💡
-                    - 가설건축물, 수질검사, 보건증, 교육 등 개체(동수, 번호, 이름, 교육명)가 여러 개인 문서는 아래 허용된 접두사로 시작하게 키워드를 스스로 창조해.
-                    - 허용 접두사: "가설건축물_", "수질검사_", "보건증_", "교육_"
+                    - 가설건축물, 수질검사, 보건증 등 개체가 여러 개인 문서는 아래 허용된 접두사로 시작하게 키워드를 스스로 창조해.
+                    - 허용 접두사: "가설건축물_", "수질검사_", "보건증_"
                     - 예시: "가설건축물_8동", "보건증_홍길동"
                     
                     🚨 [예외 처리 - 버리지 말고 무조건 기록] 🚨
-                    - 사내 규정, 기준서, 위기대응 절차 등 유효기간이 없는 지침서는 무조건 "매뉴얼" 로 분류해.
                     - 영수증, 회식 기안서, 관련 없는 사진 등 아예 쓸모없는 쓰레기 데이터는 절대 누락시키지 말고 무조건 "기타" 로 분류해. (절대 PASS 금지)
                     
                     만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류나 매뉴얼은 '영구'로 기재해. 
                     
                     반드시 JSON 형식으로만 응답할 것.
                     형식: {
-                        "키워드": "가설건축물_3동", 
+                        "키워드": "법정위생교육_식품제조가공업", 
                         "문서_실제제목": "본문 공식 명칭", 
                         "발급일": "YYYY-MM-DD", 
                         "만료일": "YYYY-MM-DD",
@@ -1035,7 +1087,7 @@ with tab4:
                         "분류근거": "발급기관 및 본문 내용 매핑"
                     }"""
                     
-                    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "교육_")
+                    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "법정위생교육_", "HACCP교육_")
                     
                     for i, f in enumerate(files_to_process):
                         update_log(f"⏳ [{i+1}/{total}] 문서 초정밀 분석 중: {f['name']}")
@@ -1084,13 +1136,16 @@ with tab4:
                             parsed = json.loads(json_match.group(0))
                             kw = parsed.get("키워드", "")
                             
-                            if kw not in ("PASS", "기타", "매뉴얼") and kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
+                            if kw not in ("PASS", "기타", "매뉴얼", "일반수료증", "HACCP정기교육") and kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
                                 update_log(f"🛡️ 미인가 키워드 강제 '기타' 편입: {kw}")
                                 kw = "기타"
                                 parsed["키워드"] = kw
                             
                             if kw != "PASS":
                                 cycle = str(MASTER_DOC_REQUIREMENTS.get(kw, {}).get("주기", 0))
+                                if kw.startswith("법정위생교육_") or kw == "HACCP정기교육":
+                                    cycle = "12"
+                                    
                                 new_row = [
                                     kw, f['name'], parsed.get("문서_실제제목",""), parsed.get("발급일",""), parsed.get("만료일",""),
                                     cycle, parsed.get("개정번호","-"), parsed.get("분류근거",""), fid, f['webViewLink']
@@ -1149,7 +1204,7 @@ with tab4:
 # ----------------- TAB 5: HACCP 챗봇 (Multi-Agent System) -----------------
 with tab5:
     st.markdown("### 💬 HACCP Multi-Agent 전문 챗봇")
-    st.caption("단일 AI의 환각을 방지하기 위해 3명의 AI(추출 ➔ 검증 ➔ 답변)가 릴레이로 협업하여 완벽한 규제 판정을 내립니다.")
+    st.caption("단일 AI의 환각을 방지하기 위해 3명의 AI(추출 ➔ 검증 ➔ 답변)가 릴레이로 협업하여 전사적이고 범용적인 규제 판정을 내립니다.")
     
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
@@ -1200,15 +1255,14 @@ with tab5:
                     
                     임무: 메모리에 적재된 마스터 지식베이스 및 실제 HACCP 인증서를 대조하여 다음 트랙 중 하나로 교차 검증하시오.
                     트랙 1 (인증/신제품/공정 문의): 
-                    - 🚨 [절대 검증 기준]: 사용자가 문의한 제품 및 공정이 실제 사내 인증서의 범위와 정확히 일치하는지 판정하시오.
-                    - 특정 단일 공정(예: 추출, 살균, 여과 등)이 기존 인증 범위에 있더라도, 해당 반제품을 '완제품'으로 출하하기 위해 필수적인 후속 공정(예: 포장지 멸균, 금속검출 등)이 누락되었거나 인증 범위를 벗어난다면, "완제품 생산을 위해서는 해당 후속 공정의 신규/변경 인증(또는 품목제조보고)이 필요하다"고 범용적으로 판정하시오. 특정 제품명에 얽매이지 말고 철저히 '전체 공정의 연속성'을 기준으로 검증할 것.
+                    - 🚨 [품목별 법적 독립성 절대 엄수 (교차대용 불가)]: HACCP은 철저히 '개별 품목' 단위 인증입니다. A품목(예: 가공두유)이 무균포장 공정 인증을 받았다고 해서, B품목(예: 원액두유)이 물리적으로 그 기계 라인을 탄다고 법적인 무균포장 인증을 받은 것으로 인정되지 않습니다!
+                    - 사용자가 묻는 특정 품목의 인증서나 지식베이스상에 '여과, 살균' 등 일부 공정만 적혀있다면, "해당 품목을 완제품 팩으로 팔기 위해서는 멸균 및 포장 공정에 대한 HACCP 인증(또는 공정 추가)을 관할 기관에서 새로 받아야 한다"고 매몰차게 지적하시오. 기계 라인이 연결되어 있다고 해서 법적 인증을 마음대로 합치거나 공유(환각)하지 마시오.
                     트랙 2 (일반 규정/지식 문의): 작업장 환경, 위생, 기준서 등 일반적인 내용은 Agent A의 팩트가 정확한지 확인 후 통과시키시오."""
                     res_B = base_model.generate_content(prompt_B).text
                     
                     # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
                     st.write("📝 **[Agent C]** 다각도 실무 통찰 반영 답변 생성 중...")
                     
-                    # 💡 [토큰 폭발 방어 캡] 과거 대화는 최근 6개(사용자 3번, AI 3번)까지만 묶어서 챗봇 뇌의 과부하를 막습니다.
                     history_for_gemini = []
                     for m in st.session_state.chat_messages[-6:]:
                         if m["role"] == "assistant":
@@ -1224,9 +1278,9 @@ with tab5:
                     임무: 위 판정 결과를 바탕으로 실무자에게 명확하고 이해하기 쉬운 답변을 작성하시오. 거창한 보고서 양식은 금지하며, 현업 실무자에게 핵심 결론, 근거, 조치사항만 바로 간결하게 전달하시오.
                     
                     💡 [범용적 프로세스 통합 원칙 (절대 규칙)]: 
-                    1. 🚨 **결론부 명확화**: 답변 최상단 첫 줄에 완제품 출하 기준의 최종 결론(조건부 승인, 추가 인증 필요성, 가능 여부 등)을 명확하게 선언하시오.
+                    1. 🚨 **결론부 명확화**: 답변 최상단 첫 줄에 완제품 출하 기준의 최종 결론(조건부 승인, 추가 인증 필요성, 가능 여부 등)을 명확하게 선언하시오. 특히 품목별로 누락된 공정(예: 원액두유의 멸균/포장 인증 부재)이 있다면, "현재 상태로는 완제품 출하가 불가하며 해당 공정 추가 인증이 반드시 필요하다"고 단호하게 팩트를 짚어주시오.
                     2. **전체 공정(숲) 제시**: 사용자가 묻는 제품/공정이 '최종 완제품화'되기 위해 거쳐야 하는 전체 공정 흐름(가공 ➔ 살균 ➔ 여과 ➔ 무균포장 등)을 먼저 명확히 요약하시오.
-                    3. **유기적 통합 설명**: 단편적인 공정 설명에 그치지 말고, 추출된 중요관리점(CCP)과 실무 포인트를 생산 순서에 따라 하나의 매끄러운 흐름으로 묶어 설명하시오.
+                    3. **유기적 통합 설명 및 전사적 영향 파악**: 단편적인 공정 설명에 그치지 말고, 해당 변경이나 조치가 다른 라인, 선행요건, 식약처 및 FSSC22000 심사 등 외부 인증에 미칠 파급 효과(나비효과)까지 범용적으로 짚어주시오.
                     4. **리스크 통찰**: 교차오염, CIP 검증, 규제(품목제조보고) 등 완제품 출하 시 예상되는 실무적 리스크를 종합적으로 짚어주시오."""
                     
                     final_chat = base_model.start_chat(history=history_for_gemini)
