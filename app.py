@@ -215,6 +215,7 @@ if "master_cache_name" not in st.session_state:
 
 if "priority_keywords" not in st.session_state: st.session_state.priority_keywords = []
 if "search_done" not in st.session_state: st.session_state.search_done = False
+if "search_mode" not in st.session_state: st.session_state.search_mode = "exact"
 if "found_files" not in st.session_state: st.session_state.found_files = []
 if "search_keyword" not in st.session_state: st.session_state.search_keyword = ""
 if "search_question" not in st.session_state: st.session_state.search_question = ""
@@ -226,6 +227,9 @@ if "target_folder_key" not in st.session_state: st.session_state.target_folder_k
 if "gw_keyword" not in st.session_state: st.session_state.gw_keyword = ""
 if "auto_db" not in st.session_state: st.session_state.auto_db = []
 if "files_to_scan" not in st.session_state: st.session_state.files_to_scan = []
+if "selected_doc_idx" not in st.session_state: st.session_state.selected_doc_idx = 0
+if "selected_page_num" not in st.session_state: st.session_state.selected_page_num = 1
+if "chat_doc_viewer" not in st.session_state: st.session_state.chat_doc_viewer = None
 
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = [{"role": "assistant", "content": "안녕하십니까. 연세유업 아산공장 식품안전 및 HACCP 통합 검증 시스템입니다. 공정 관리 기준, 선행요건, 법적 인허가 및 인증 규격에 대해 문의해 주시면 사내 기준서와 현행 법령을 교차 검증하여 명확히 안내해 드리겠습니다."}]
@@ -249,6 +253,13 @@ custom_theme_css = """
     th { font-weight: 700 !important; padding: 12px 16px !important; text-align: left !important; border-right: 1px solid #cbd5e1 !important; }
     td { padding: 12px 16px !important; border-right: 1px solid #cbd5e1 !important; border-bottom: 1px solid #e2e8f0 !important; }
     tbody tr:hover { background-color: #f1f5f9 !important; }
+    
+    .mfds-banner { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 18px 24px; text-align: center; font-size: 1.15rem; font-weight: 600; margin-bottom: 20px; }
+    .mfds-result-item { border-bottom: 1px solid #e2e8f0; padding: 14px 8px; }
+    .mfds-title { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+    .mfds-path { font-size: 0.85rem; color: #64748b; font-weight: 500; }
+    .mfds-snippet { font-size: 0.95rem; color: #334155; line-height: 1.6; margin-top: 6px; }
+    .mfds-key { color: #dc2626; font-weight: 800; background-color: #fef08a; padding: 1px 4px; border-radius: 3px; }
 }
 </style>
 """
@@ -287,8 +298,27 @@ def get_sheets_service():
     creds = get_credentials()
     return build('sheets', 'v4', credentials=creds) if creds else None
 
+def ensure_auto_db_loaded():
+    if not st.session_state.auto_db and SHEET_ID:
+        sheet_service = get_sheets_service()
+        if sheet_service:
+            try:
+                result = sheet_service.spreadsheets().values().get(
+                    spreadsheetId=SHEET_ID, range="DB!A:J"
+                ).execute()
+                values = result.get('values', [])
+                if len(values) > 1:
+                    headers = values[0]
+                    loaded_db = []
+                    for row in values[1:]:
+                        row_dict = {headers[i]: (row[i] if i < len(row) else "") for i in range(len(headers))}
+                        loaded_db.append(row_dict)
+                    st.session_state.auto_db = loaded_db
+            except:
+                pass
+
 # ==========================================
-# [3] 유틸리티 및 스마트 캐싱/정렬
+# [3] 유틸리티 및 식약처 스타일 스니펫/음영 뷰어 엔진
 # ==========================================
 def extract_year_string(filename, created_time=""):
     match = re.search(r'(2[4-9])(0[1-9]|1[0-2])([0-2][1-9]|3[01])', filename.replace(" ", ""))
@@ -321,25 +351,34 @@ def get_target_folder_ids(_service, root_folder_id):
     except: pass
     return folders
 
-def extract_snippet_from_pdf(file_bytes, keyword):
-    if not PYMUPDF_INSTALLED:
-        return "⚠️ 본문 미리보기를 지원하려면 시스템에 PyMuPDF가 설치되어야 합니다."
-    try:
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text("text").replace("\n", " ")
-            idx = text.find(keyword)
-            if idx != -1:
-                start = max(0, idx - 40)
-                end = min(len(text), idx + 40 + len(keyword))
-                snippet = text[start:end]
-                return f"[페이지 {page_num + 1}] ... {snippet} ..."
-        return "💡 문서 내 텍스트 매칭 없음 (이미지 스캔본일 가능성)"
-    except Exception as e:
-        return f"본문 스니펫 추출 실패: {e}"
+@st.cache_data(ttl=3600)
+def get_all_managed_folders_map(_service):
+    folder_map = {}
+    if DRIVE_FOLDER_ID:
+        folder_map[DRIVE_FOLDER_ID] = "방문심사"
+    for cat_name, root_fid in FLAT_FOLDER_DB.items():
+        if root_fid.startswith("folder_id_"): continue
+        folder_map[root_fid] = cat_name
+        def fetch_sub(parent_id, parent_label):
+            page_token = None
+            while True:
+                res = _service.files().list(
+                    q=f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+                    fields="nextPageToken, files(id, name)", pageSize=1000, pageToken=page_token).execute()
+                for item in res.get('files', []):
+                    sub_label = f"{parent_label} > {item['name']}"
+                    folder_map[item['id']] = sub_label
+                    fetch_sub(item['id'], sub_label)
+                page_token = res.get('nextPageToken')
+                if not page_token: break
+        try: fetch_sub(root_fid, cat_name)
+        except: pass
+    return folder_map
 
-def download_file_bytes(service, file_id):
+@st.cache_data(ttl=1800)
+def get_cached_file_bytes(file_id):
+    service = get_drive_service()
+    if not service: return None
     request = service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
@@ -348,94 +387,373 @@ def download_file_bytes(service, file_id):
     fh.seek(0)
     return fh.read()
 
-def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None):
+def download_file_bytes(service, file_id):
+    return get_cached_file_bytes(file_id)
+
+def analyze_pdf_matches(file_bytes, keyword):
+    """PDF 본문에서 검색어가 포함된 모든 페이지 번호와 앞뒤 110자 발췌문을 추출합니다."""
+    if not PYMUPDF_INSTALLED or not file_bytes or not keyword:
+        return [], ""
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        matched_pages = []
+        snippets = []
+        kw_clean = keyword.strip()
+        kw_lower = kw_clean.lower()
+        
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = re.sub(r'\s+', ' ', page.get_text("text"))
+            idx = text.lower().find(kw_lower)
+            if idx != -1:
+                matched_pages.append(page_num + 1)
+                if len(snippets) < 3:
+                    start = max(0, idx - 60)
+                    end = min(len(text), idx + len(kw_clean) + 110)
+                    snip = text[start:end]
+                    snippets.append(f"[p.{page_num + 1}] ...{snip}...")
+        total_pages = len(doc)
+        doc.close()
+        return matched_pages, " / ".join(snippets)
+    except Exception:
+        return [], ""
+
+def render_highlighted_pdf_page(file_bytes, page_num, keyword):
+    """특정 PDF 페이지 내 검색어 위치에 연두색/노란색 반투명 형광펜 음영을 칠해 고해상도 이미지로 반환합니다."""
+    if not PYMUPDF_INSTALLED or not file_bytes:
+        return None, 0, []
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        total_pages = len(doc)
+        if total_pages == 0:
+            doc.close()
+            return None, 0, []
+            
+        matched_pages = []
+        kw_clean = keyword.strip() if keyword else ""
+        
+        if kw_clean:
+            for p_idx in range(total_pages):
+                p_text = doc[p_idx].get_text("text")
+                if kw_clean.lower() in p_text.lower():
+                    matched_pages.append(p_idx + 1)
+                    
+        p_idx = max(0, min(page_num - 1, total_pages - 1))
+        page = doc[p_idx]
+        
+        if kw_clean:
+            rects = page.search_for(kw_clean)
+            if not rects:
+                for token in [t for t in re.split(r'[\s,()/·~-]+', kw_clean) if len(t) >= 2]:
+                    rects.extend(page.search_for(token))
+            for r in rects:
+                annot = page.add_highlight_annot(r)
+                annot.set_colors(stroke=(0.65, 0.92, 0.45))  # 식약처 공전 스타일 연두색 형광펜 음영
+                annot.update()
+                
+        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+        img_bytes = pix.tobytes("png")
+        doc.close()
+        return img_bytes, total_pages, matched_pages
+    except Exception:
+        return None, 0, []
+
+def extract_snippet_from_pdf(file_bytes, keyword):
+    matched_pages, snip_str = analyze_pdf_matches(file_bytes, keyword)
+    if snip_str:
+        return snip_str
+    return "💡 문서 내 텍스트 매칭 없음 (파일명 매칭 또는 이미지 스캔본)"
+
+def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, priority_keywords=None, filter_folder_files=False):
     service = get_drive_service()
     if not service: return
+    ensure_auto_db_loaded()
     
     st.session_state.update({
-        "search_done": True, "search_keyword": display_keyword, "search_question": display_keyword,
+        "search_done": True, "search_mode": "exact",
+        "search_keyword": display_keyword, "search_question": display_keyword,
         "target_folder_key": folder_key, "gw_keyword": gw_keyword,
-        "priority_keywords": priority_keywords or [], "last_file_id": ""
+        "priority_keywords": priority_keywords or [], "last_file_id": "",
+        "selected_doc_idx": 0, "selected_page_num": 1
     })
     
     db_list = st.session_state.auto_db
     matched_files = []
+    seen_fids = set()
     
+    # 1차: 시트 마스터 DB에서 키워드 + 파일명 + 문서_실제제목 다중 교차 매칭 (최신순 역순 탐색)
     if db_list and priority_keywords:
-        for row in db_list:
-            kw = row.get("키워드", "")
-            if any(req_kw in kw for req_kw in priority_keywords):
+        for row in reversed(db_list):
+            fid = row.get("파일 ID", "")
+            if not fid or fid in seen_fids: continue
+            kw = str(row.get("키워드", ""))
+            fname = str(row.get("파일명", ""))
+            real_title = str(row.get("문서_실제제목", ""))
+            combined_target = f"{kw} {fname} {real_title}".replace(" ", "").lower()
+            
+            is_match = False
+            for req_kw in priority_keywords:
+                req_clean = req_kw.replace(" ", "").lower()
+                if req_clean in combined_target:
+                    # 'HACCP 기준서' 검색 시 인증서(HACCP_가공두유 등)가 잘못 걸리는 현상 차단
+                    if display_keyword in ("기준서", "위생 절차", "보안 절차", "회수 절차") and kw.startswith("HACCP_"):
+                        continue
+                    is_match = True
+                    break
+                    
+            if is_match:
+                seen_fids.add(fid)
                 matched_files.append({
-                    'id': row.get("파일 ID", ""),
-                    'name': row.get("파일명", ""),
-                    'webViewLink': row.get("뷰어 링크", ""),
+                    'id': fid,
+                    'name': fname or real_title,
+                    'webViewLink': row.get("뷰어 링크", f"https://drive.google.com/file/d/{fid}/view"),
                     'createdTime': row.get("발급일", ""),
-                    'mimeType': 'application/pdf'
+                    'mimeType': 'application/pdf',
+                    'folder_path': folder_key or kw,
+                    'snippet': "",
+                    'matched_pages': [1]
                 })
     
+    # 2차: 시트에 미스캔된 폴더(기준서, 선행요건, FSSC22000 등)는 드라이브에서 직접 탐색 후 키워드 필터링
+    if (not matched_files or filter_folder_files) and folder_key:
+        folder_keys_to_search = [folder_key] if isinstance(folder_key, str) else folder_key
+        for f_key in folder_keys_to_search:
+            if f_key in FLAT_FOLDER_DB:
+                target_id = FLAT_FOLDER_DB[f_key]
+                if not target_id.startswith("folder_id_"):
+                    target_folders = get_target_folder_ids(service, target_id)
+                    for fid in target_folders:
+                        page_token = None
+                        while True:
+                            res = service.files().list(
+                                q=f"'{fid}' in parents and trashed = false", spaces='drive', 
+                                fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime)', 
+                                pageSize=1000, pageToken=page_token).execute()
+                            for f in res.get('files', []):
+                                if f['mimeType'] != 'application/vnd.google-apps.folder' and f['id'] not in seen_fids:
+                                    fname_clean = f['name'].replace(" ", "").lower()
+                                    if filter_folder_files and priority_keywords:
+                                        if not any(rk.replace(" ", "").lower() in fname_clean for rk in priority_keywords):
+                                            continue
+                                    seen_fids.add(f['id'])
+                                    f['snippet'] = ""
+                                    f['folder_path'] = f_key
+                                    f['matched_pages'] = [1]
+                                    matched_files.append(f)
+                            page_token = res.get('nextPageToken')
+                            if not page_token: break
+                            
+    st.session_state.found_files = matched_files
     if matched_files:
-        st.session_state.found_files = matched_files
-        st.success(f"⚡ [마스터 DB 연동] 관련 최신 문서 {len(matched_files)}건을 즉시 호출하였습니다.")
-    elif folder_key and folder_key in FLAT_FOLDER_DB:
-        target_id = FLAT_FOLDER_DB[folder_key]
-        if not target_id.startswith("folder_id_"):
-            target_folders = get_target_folder_ids(service, target_id)
-            all_files = []
-            for fid in target_folders:
-                page_token = None
-                while True:
-                    res = service.files().list(
-                        q=f"'{fid}' in parents and trashed = false", spaces='drive', 
-                        fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime)', 
-                        pageSize=1000, pageToken=page_token).execute()
-                    for f in res.get('files', []):
-                        if f['mimeType'] != 'application/vnd.google-apps.folder':
-                            f['snippet'] = ""
-                            all_files.append(f)
-                    page_token = res.get('nextPageToken')
-                    if not page_token: break
-            st.session_state.found_files = all_files
-            st.success(f"✅ 정밀 탐색 완료: 연관 문서 {len(st.session_state.found_files)}건을 확보하였습니다.")
-    else:
-        st.session_state.found_files = []
+        st.success(f"⚡ [정밀 매칭 완료] '{display_keyword}' 관련 문서 {len(matched_files)}건을 확보하였습니다.")
 
 def execute_deep_search(query_text):
     service = get_drive_service()
     if not service: return
+    ensure_auto_db_loaded()
     
     keyword = query_text.strip()
+    kw_lower = keyword.lower()
     st.session_state.update({
-        "search_done": True, "search_keyword": keyword, "search_question": query_text,
-        "target_folder_key": None, "gw_keyword": None, "priority_keywords": [], "last_file_id": ""
+        "search_done": True, "search_mode": "deep",
+        "search_keyword": keyword, "search_question": query_text,
+        "target_folder_key": None, "gw_keyword": None, "priority_keywords": [], "last_file_id": "",
+        "selected_doc_idx": 0, "selected_page_num": 1
     })
     
-    with st.spinner("본문 정밀 검색 및 스니펫 추출을 진행 중입니다..."):
-        all_files = []
+    with st.spinner(f"🔍 전체 폴더 및 문서 본문에서 '{keyword}' 검색 및 페이지 음영 좌표를 분석 중입니다..."):
+        folder_map = get_all_managed_folders_map(service)
+        managed_folder_ids = set(folder_map.keys())
+        candidate_files = {}
+        
+        # 1단계: 구글 시트 마스터 DB 내 메타데이터 매칭
+        for row in st.session_state.auto_db:
+            fid = row.get("파일 ID", "")
+            if not fid: continue
+            fname = str(row.get("파일명", ""))
+            rtitle = str(row.get("문서_실제제목", ""))
+            kw_col = str(row.get("키워드", ""))
+            reason = str(row.get("분류근거", ""))
+            if any(kw_lower in s.lower() for s in [fname, rtitle, kw_col, reason]):
+                candidate_files[fid] = {
+                    'id': fid, 'name': fname or rtitle,
+                    'webViewLink': row.get("뷰어 링크", f"https://drive.google.com/file/d/{fid}/view"),
+                    'createdTime': row.get("발급일", ""),
+                    'mimeType': 'application/pdf',
+                    'folder_path': f"마스터 DB > {kw_col}",
+                    'snippet': f"[메타데이터 매칭] 문서명: {rtitle} ({reason})",
+                    'matched_pages': [1]
+                }
+                
+        # 2단계: 구글 드라이브 전체 하위 폴더 대상 본문(fullText) 및 파일명(name) 통합 검색
+        safe_kw = keyword.replace("'", "\\'")
         page_token = None
         while True:
             res = service.files().list(
-                q=f"fullText contains '{keyword}' and trashed = false and '{DRIVE_FOLDER_ID}' in parents", 
-                spaces='drive', fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime)', 
-                pageSize=1000, pageToken=page_token).execute()
+                q=f"(name contains '{safe_kw}' or fullText contains '{safe_kw}') and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
+                spaces='drive',
+                fields='nextPageToken, files(id, name, webViewLink, mimeType, createdTime, parents)',
+                pageSize=1000, pageToken=page_token
+            ).execute()
             for f in res.get('files', []):
-                if f['mimeType'] != 'application/vnd.google-apps.folder':
-                    f['snippet'] = ""
-                    all_files.append(f)
+                parents = f.get('parents', [])
+                if not managed_folder_ids or any(p in managed_folder_ids for p in parents):
+                    fid = f['id']
+                    parent_label = "사내 문서함"
+                    for p in parents:
+                        if p in folder_map:
+                            parent_label = folder_map[p]
+                            break
+                    if fid not in candidate_files:
+                        f['folder_path'] = parent_label
+                        f['snippet'] = ""
+                        f['matched_pages'] = [1]
+                        candidate_files[fid] = f
+                    else:
+                        candidate_files[fid]['folder_path'] = parent_label
             page_token = res.get('nextPageToken')
             if not page_token: break
             
+        all_files = list(candidate_files.values())
+        
+        # 3단계: PyMuPDF로 실제 매칭 페이지 번호 및 앞뒤 문맥 스니펫 추출
         if PYMUPDF_INSTALLED:
-            for f in all_files:
+            for f in all_files[:25]:
                 if "pdf" in f.get('mimeType', '').lower():
                     try:
-                        file_bytes = download_file_bytes(service, f['id'])
-                        f['snippet'] = extract_snippet_from_pdf(file_bytes, keyword)
+                        file_bytes = get_cached_file_bytes(f['id'])
+                        m_pages, snip_text = analyze_pdf_matches(file_bytes, keyword)
+                        if m_pages:
+                            f['matched_pages'] = m_pages
+                            f['snippet'] = snip_text
+                        elif not f.get('snippet'):
+                            f['snippet'] = f"[제목 매칭] {f['name']}"
                     except:
-                        f['snippet'] = "스니펫 추출 오류"
-                else:
-                    f['snippet'] = "PDF 문서가 아님"
-                    
+                        if not f.get('snippet'):
+                            f['snippet'] = "본문 스니펫 추출 불가"
+                            
         st.session_state.found_files = all_files
+        if all_files:
+            st.session_state.selected_doc_idx = 0
+            first_pages = all_files[0].get('matched_pages', [1])
+            st.session_state.selected_page_num = first_pages[0] if first_pages else 1
+
+def locate_reference_in_drive(ref_term):
+    """챗봇 답변의 강조 문구(굵은 글씨 또는 규정 코드) 클릭 시 해당 문서와 페이지를 즉시 찾아냅니다."""
+    service = get_drive_service()
+    if not service: return None
+    ensure_auto_db_loaded()
+    
+    clean_term = re.sub(r'[*_`\[\]]', '', ref_term).strip()
+    
+    # 대표 규정 코드 및 주제어 -> 실제 드라이브 문서명 매핑 사전
+    rule_alias_map = {
+        "보관": ["보관 및 운반", "보관운반"],
+        "운반": ["보관 및 운반", "보관운반"],
+        "작업장": ["작업장기준서"],
+        "조도": ["작업장기준서"],
+        "온습도": ["작업장기준서", "보관 및 운반"],
+        "온·습도": ["작업장기준서", "보관 및 운반"],
+        "위생": ["위생관리기준서"],
+        "복장": ["위생관리기준서"],
+        "이물": ["이물관리기준서"],
+        "장갑": ["장갑관리기준서"],
+        "냉장": ["냉장냉동설비", "보관 및 운반"],
+        "해동": ["해동관리기준서"],
+        "검사": ["검사관리기준서"],
+        "알러겐": ["알러겐 관리기준서", "알러겐"],
+        "알레르기": ["알러겐 관리기준서", "알러겐"],
+        "용수": ["용수관리 기준서"],
+        "회수": ["제품회수관리기준서", "위기관리규정"],
+        "P-210": ["식품보안 관리 규정", "P-210"],
+        "식품보안": ["식품보안 관리 규정", "P-210"],
+        "제한구역": ["식품보안 관리 규정", "P-210"],
+        "P-200": ["부적합품관리규정", "시정조치", "협력업체관리규정", "P-200"],
+        "부적합": ["부적합품관리규정"],
+        "P-100": ["품질보증 업무규정", "부대시설관리규정", "환경관리규정", "생산관리규정"],
+        "P-300": ["고객불만처리규정", "작업환경및안전", "식품사기대응규정", "공정관리규정"],
+        "P-900": ["위기관리규정"],
+        "가설건축물": ["가설건축물", "보관 및 운반", "작업장기준서"],
+        "원액두유": ["원액두유"],
+        "가공두유": ["가공두유"],
+        "살균": ["제조공정설명서", "HACCP PLAN"],
+        "멸균": ["제조공정설명서", "HACCP PLAN"],
+        "테트라팩": ["HACCP PLAN", "제조공정설명서"],
+        "콤비팩": ["HACCP PLAN", "제조공정설명서"],
+        "CIP": ["제조시설관리기준서", "위생관리기준서"]
+    }
+    
+    search_hints = [clean_term]
+    for k, v_list in rule_alias_map.items():
+        if k.lower() in clean_term.lower():
+            search_hints.extend(v_list)
+            
+    folder_map = get_all_managed_folders_map(service)
+    managed_folder_ids = set(folder_map.keys())
+    candidates = []
+    seen_ids = set()
+    
+    # 1. 마스터 DB 검색
+    for row in reversed(st.session_state.auto_db):
+        fid = row.get("파일 ID", "")
+        if not fid or fid in seen_ids: continue
+        fname = str(row.get("파일명", ""))
+        rtitle = str(row.get("문서_실제제목", ""))
+        if any(h.replace(" ", "").lower() in (fname + rtitle).replace(" ", "").lower() for h in search_hints):
+            seen_ids.add(fid)
+            candidates.append({'id': fid, 'name': fname or rtitle, 'webViewLink': row.get("뷰어 링크", f"https://drive.google.com/file/d/{fid}/view")})
+            
+    # 2. 드라이브 파일명 및 본문 검색
+    for h in search_hints[:3]:
+        safe_h = h.replace("'", "\\'")
+        try:
+            res = service.files().list(
+                q=f"(name contains '{safe_h}' or fullText contains '{safe_h}') and mimeType = 'application/pdf' and trashed = false",
+                fields="files(id, name, webViewLink, parents)", pageSize=15
+            ).execute()
+            for f in res.get('files', []):
+                if f['id'] not in seen_ids:
+                    parents = f.get('parents', [])
+                    if not managed_folder_ids or any(p in managed_folder_ids for p in parents):
+                        seen_ids.add(f['id'])
+                        candidates.append(f)
+        except:
+            pass
+            
+    if not candidates:
+        return None
+        
+    # 후보 문서 중 클릭한 구문이 본문에 실제로 등장하는 페이지 탐색
+    kw_tokens = [clean_term] + [t for t in re.split(r'[\s,()/·~:-]+', clean_term) if len(t) >= 2]
+    for cand in candidates[:6]:
+        try:
+            f_bytes = get_cached_file_bytes(cand['id'])
+            for token in kw_tokens:
+                m_pages, snip = analyze_pdf_matches(f_bytes, token)
+                if m_pages:
+                    return {
+                        'id': cand['id'],
+                        'name': cand['name'],
+                        'webViewLink': cand.get('webViewLink', f"https://drive.google.com/file/d/{cand['id']}/view"),
+                        'page': m_pages[0],
+                        'matched_pages': m_pages,
+                        'highlight_kw': token,
+                        'ref_term': clean_term
+                    }
+        except:
+            pass
+            
+    # 본문 텍스트 매칭이 안 된 경우(스캔 이미지 PDF 등) 첫 번째 후보 문서의 1페이지 반환
+    top_cand = candidates[0]
+    return {
+        'id': top_cand['id'],
+        'name': top_cand['name'],
+        'webViewLink': top_cand.get('webViewLink', f"https://drive.google.com/file/d/{top_cand['id']}/view"),
+        'page': 1,
+        'matched_pages': [1],
+        'highlight_kw': clean_term,
+        'ref_term': clean_term
+    }
 
 # ==========================================
 # [4] 사이드바 (마스터 캐싱 및 원클릭 버튼)
@@ -449,10 +767,11 @@ with st.sidebar:
         
     if st.button("마스터 지식베이스 갱신 및 적재", use_container_width=True):
         drive_service = get_drive_service()
+        ensure_auto_db_loaded()
         if not drive_service:
             st.error("구글 드라이브 API 인증에 실패하였습니다.")
         elif not st.session_state.auto_db:
-            st.warning("⚠️ 적재 전, 우측 메인 화면의 [3. 🚨 탑다운 대시보드] 탭을 클릭하여 마스터 DB를 먼저 동기화해 주십시오.")
+            st.warning("⚠️ 마스터 DB 데이터가 비어 있습니다. 4번 탭에서 문서 스캔을 먼저 진행해 주십시오.")
         else:
             with st.spinner("마스터 DB에 등록된 최신 기준서, 선행요건 및 인증서를 선별하여 메모리에 적재 중입니다..."):
                 try:
@@ -460,7 +779,6 @@ with st.sidebar:
                     target_pdfs = []
                     seen_fids = set()
                     
-                    # 중복 파일 ID 제거 및 핵심 규정(기준서, 선행요건, FSSC, 인증서) 선별
                     for row in reversed(st.session_state.auto_db):
                         kw = row.get("키워드", "")
                         fid = row.get("파일 ID", "")
@@ -527,8 +845,8 @@ with st.sidebar:
 
     with sidebar_tab2:
         with st.form(key='search_form'):
-            st.caption("문서 본문 내 키워드를 정밀 탐색하여 해당 문맥을 미리 표시합니다.")
-            manual_query = st.text_input("검색어 입력:", placeholder="예: 방충방서, 배합비", label_visibility="collapsed")
+            st.caption("전체 하위 폴더 및 PDF 본문 내 키워드를 정밀 탐색하여 문맥 요약과 음영 페이지를 표시합니다.")
+            manual_query = st.text_input("검색어 입력:", placeholder="예: 사과, 조도, 과산화수소, 알러겐", label_visibility="collapsed")
             if st.form_submit_button("본문 정밀 검색 실행 🚀", use_container_width=True) and manual_query:
                 execute_deep_search(manual_query)
 
@@ -538,7 +856,7 @@ with st.sidebar:
         with st.expander("📁 1. 영업 인허가 및 각종 인증서", expanded=True):
             if st.button("영업신고/공장등록/가설건축물", use_container_width=True): 
                 execute_exact_match("인허가", "인허가 서류", "", [
-                    "식품제조가공업", "유가공업", "집유업", "사업자등록증", "공장등록증", 
+                    "사업자등록", "공장등록", "건축물대장", "식품제조가공업", "축산물가공업", "유가공업", "집유업", 
                     "수입식품영업", "식품소분업", "축산물판매업", "건강기능식품영업", "통신판매업", "방문판매업", "집단급식소", "화장품책임판매", "지하수개발허가", "가설건축물"
                 ])
             if st.button("HACCP 및 FSSC 인증서", use_container_width=True): 
@@ -552,21 +870,29 @@ with st.sidebar:
 
         with st.expander("📘 2. 사내 규정 및 절차 (매뉴얼)"):
             if st.button("선행요건 / HACCP 기준서", use_container_width=True): 
-                execute_exact_match("기준서", "선행요건", "", ["선행요건", "HACCP"])
+                execute_exact_match("기준서", ["선행요건", "기준서"], "", [
+                    "작업장기준서", "제조시설관리기준서", "냉장냉동", "해동관리", "검사관리", "보관 및 운반", "용수관리", "HACCP 팀의구성", "제조공정설명서", "HACCP PLAN"
+                ], filter_folder_files=True)
             if st.button("위생 / 해충 / 알러겐 절차", use_container_width=True): 
-                execute_exact_match("위생 절차", "기준서", "", ["위생 관리", "해충", "알러겐"])
+                execute_exact_match("위생 절차", "선행요건", "", [
+                    "위생관리기준서", "장갑관리기준서", "알러겐 관리기준서", "알러겐", "작업장기준서"
+                ], filter_folder_files=True)
             if st.button("이물 / 식품보안 절차", use_container_width=True): 
-                execute_exact_match("보안 절차", "선행요건", "", ["이물", "식품보안", "사기대응"])
+                execute_exact_match("보안 절차", ["선행요건", "FSSC22000"], "", [
+                    "이물관리기준서", "식품보안", "식품사기", "P-210", "P-300"
+                ], filter_folder_files=True)
             if st.button("위기대응 및 회수 절차", use_container_width=True): 
-                execute_exact_match("회수 절차", "기준서", "", ["위기관리", "제품회수"])
+                execute_exact_match("회수 절차", ["선행요건", "FSSC22000"], "", [
+                    "제품회수관리기준서", "위기관리규정", "비상사태", "부적합품관리규정", "시정조치", "고객불만"
+                ], filter_folder_files=True)
         
         with st.expander("🧼 3. 위생·환경 평가 및 인력 점검"):
             if st.button("수질검사 성적서 / 저수조 청소", use_container_width=True): 
-                execute_exact_match("수질검사", "수질검사", "용수 검사 성적서", ["수질검사", "저수조청소"])
+                execute_exact_match("수질검사", ["수질검사", "물탱크청소"], "용수 검사 성적서", ["수질검사", "저수조청소", "물탱크"])
             if st.button("방역 관리 리포트 (GW)", use_container_width=True): 
-                execute_exact_match("방제 레포트", "방충방서 관련 서류", "방역 관리 리포트", ["방충방서_월간"])
+                execute_exact_match("방제 레포트", "방충방서 관련 서류", "방역 관리 리포트", ["방충방서"])
             if st.button("종사자 법정/보건증 및 수료증", use_container_width=True): 
-                execute_exact_match("보건증/교육", "선행요건", "", ["보건증", "법정위생교육", "HACCP정기교육", "교육"])
+                execute_exact_match("보건증/교육", "교육수료증", "", ["보건증", "법정위생교육", "HACCP정기교육", "교육_"])
             if st.button("손 위생 및 낙하세균 (GW)", use_container_width=True): 
                 execute_exact_match("위생 검사", "", "낙하세균 검사 결과")
             if st.button("냉장/냉동 창고 온도 일지 (GW)", use_container_width=True): 
@@ -592,7 +918,7 @@ with st.sidebar:
             if st.button("모의회수 기록", use_container_width=True): 
                 execute_exact_match("모의회수", "모의회수", "모의회수", ["모의회수"])
             if st.button("PL보험 및 영업배상책임보험", use_container_width=True): 
-                execute_exact_match("책임보험", "인증서", "", ["책임보험"])
+                execute_exact_match("책임보험", ["PL보험가입증명서", "인증서"], "", ["책임보험", "PL보험"])
 
 # ==========================================
 # [5] 메인 UI 탭 구성
@@ -600,56 +926,89 @@ with st.sidebar:
 st.markdown("## 🛡️ HACCP Agent 통합 포털")
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["🤖 원클릭 뷰어 & 스니펫", "📁 탐색기", "🚨 탑다운 대시보드", "⚙️ DB 자동화(관리자)", "💬 HACCP 챗봇"])
 
-# ----------------- TAB 1: 뷰어 & 스니펫 -----------------
+# ----------------- TAB 1: 뷰어 & 스니펫 (식약처 공전 스타일 리스트 + 본문 음영 뷰어) -----------------
 with tab1:
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
-        st.info(f"🔍 조회 항목: **{keyword}**")
-        
         raw_files = [f for f in st.session_state.found_files if not is_blacklisted(f['name'], keyword)]
         
-        if not raw_files and st.session_state.target_folder_key is not None and not st.session_state.priority_keywords:
-            st.warning("⚠️ 지정 폴더 내 일치하는 클라우드 문서가 없습니다. 하단의 전자결재(그룹웨어) 링크를 확인해 주십시오.")
-            
-        elif raw_files:
-            for f in raw_files: f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
-            years = ["전체보기 (최신순)"] + sorted(list(set([f['year'] for f in raw_files])), reverse=True)
-            
-            sel_year = st.radio("📅 연도 필터", years, horizontal=True, label_visibility="collapsed")
-            f_list = raw_files if sel_year == "전체보기 (최신순)" else [f for f in raw_files if f['year'] == sel_year]
-            
-            if any(f.get('snippet') for f in f_list):
-                st.markdown("### 🔎 본문 매칭 스니펫 (미리보기)")
-                for idx, f in enumerate(f_list):
-                    if f.get('snippet') and "발견 안 됨" not in f.get('snippet') and "오류" not in f.get('snippet'):
-                        snippet_html = f['snippet'].replace(keyword, f"<b style='color:red; background-color:yellow;'>{keyword}</b>")
-                        st.markdown(f"**{idx+1}. {f['name']}**")
-                        st.markdown(f"> {snippet_html}", unsafe_allow_html=True)
-                        st.markdown("---")
-
-            opts = {f"{i+1}. {f['name']}": f for i, f in enumerate(f_list)}
-            if len(f_list) > 1:
-                sel_name = st.selectbox(f"📂 {sel_year} 문서 선택 (뷰어로 열기)", list(opts.keys()))
-            else:
-                sel_name = list(opts.keys())[0]
-                st.markdown(f"**📂 {sel_year} 단일 문서 자동 선택:** {opts[sel_name]['name']}")
+        if not raw_files:
+            st.warning(f"⚠️ 조회 항목('{keyword}')과 일치하는 클라우드 문서가 없습니다. 검색어를 변경하거나 하단의 전자결재(그룹웨어) 문서함을 확인해 주십시오.")
+        else:
+            # 식약처 식품공전 스타일 검색 결과 배너 및 요약 리스트 표시
+            if st.session_state.search_mode == "deep":
+                st.markdown(
+                    f"<div class='mfds-banner'>검색어 <span style='color:#1d4ed8;'>‘{keyword}’</span>에 대한 총 <span style='color:#1d4ed8;'>{len(raw_files)}건</span>의 검색결과를 찾았습니다.</div>",
+                    unsafe_allow_html=True
+                )
                 
-            top_file = opts[sel_name]
-            
+                with st.expander(f"📋 사내 기준서 및 문서 검색 결과 목록 (1~{len(raw_files)} / 총 {len(raw_files)}건) - 클릭 시 해당 음영 페이지로 즉시 이동", expanded=True):
+                    for idx, f in enumerate(raw_files):
+                        c_info, c_btn1, c_btn2 = st.columns([7.2, 1.6, 1.2])
+                        folder_label = f.get('folder_path', '사내 문서함')
+                        m_pages = f.get('matched_pages', [1])
+                        first_p = m_pages[0] if m_pages else 1
+                        snip_raw = f.get('snippet') or f"문서명: {f['name']}"
+                        
+                        # 검색어 붉은색/노란배경 강조
+                        snip_html = re.sub(
+                            f"({re.escape(keyword)})",
+                            r"<span class='mfds-key'>\1</span>",
+                            snip_raw,
+                            flags=re.IGNORECASE
+                        )
+                        with c_info:
+                            st.markdown(
+                                f"<div class='mfds-result-item'>"
+                                f"<div class='mfds-title'>• {idx + 1}. {f['name']} <span class='mfds-path'>[{folder_label}] (매칭 페이지: p.{', p.'.join(map(str, m_pages[:5]))})</span></div>"
+                                f"<div class='mfds-snippet'>{snip_html}</div>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+                        with c_btn1:
+                            st.markdown("<div style='margin-top:18px;'></div>", unsafe_allow_html=True)
+                            if st.button(f"📄 본문 음영 열람 (p.{first_p})", key=f"deep_sel_{idx}", use_container_width=True):
+                                st.session_state.selected_doc_idx = idx
+                                st.session_state.selected_page_num = first_p
+                                st.session_state.last_file_id = ""
+                        with c_btn2:
+                            st.markdown("<div style='margin-top:18px;'></div>", unsafe_allow_html=True)
+                            st.link_button("새창으로 열기", f.get('webViewLink', f"https://drive.google.com/file/d/{f['id']}/view"), use_container_width=True)
+                st.markdown("---")
+                
+                sel_idx = min(st.session_state.selected_doc_idx, len(raw_files) - 1)
+                top_file = raw_files[sel_idx]
+            else:
+                st.info(f"🔍 조회 항목: **{keyword}** (총 {len(raw_files)}건)")
+                for f in raw_files: f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
+                years = ["전체보기 (최신순)"] + sorted(list(set([f['year'] for f in raw_files])), reverse=True)
+                
+                sel_year = st.radio("📅 연도 필터", years, horizontal=True, label_visibility="collapsed")
+                f_list = raw_files if sel_year == "전체보기 (최신순)" else [f for f in raw_files if f['year'] == sel_year]
+                
+                opts = {f"{i+1}. {f['name']}": f for i, f in enumerate(f_list)}
+                if len(f_list) > 1:
+                    sel_name = st.selectbox(f"📂 {sel_year} 문서 선택 (뷰어로 열기)", list(opts.keys()))
+                else:
+                    sel_name = list(opts.keys())[0]
+                    st.markdown(f"**📂 {sel_year} 단일 문서 자동 선택:** {opts[sel_name]['name']}")
+                top_file = opts[sel_name]
+
             if st.session_state.last_file_id != top_file['id']:
-                st.session_state.view_url = top_file['webViewLink']
+                st.session_state.view_url = top_file.get('webViewLink', f"https://drive.google.com/file/d/{top_file['id']}/view")
                 st.session_state.preview_url = f"https://drive.google.com/file/d/{top_file['id']}/preview"
+                m_pages = top_file.get('matched_pages', [1])
+                st.session_state.selected_page_num = m_pages[0] if m_pages else 1
                 
                 with st.spinner("🤖 문서 적합성 및 관련 규정 교차 분석 중..."):
                     try:
-                        file_bytes = download_file_bytes(get_drive_service(), top_file['id'])
+                        file_bytes = get_cached_file_bytes(top_file['id'])
                         file_ext = ".pdf" if "pdf" in top_file.get('mimeType', '').lower() else ".jpg"
                         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_doc:
                             tmp_doc.write(file_bytes)
                             tmp_doc_path = tmp_doc.name
                         
                         gemini_file = genai.upload_file(path=tmp_doc_path)
-                        
                         cache_name = st.session_state.get("master_cache_name")
                         
                         prompt = f"""다음 조회 항목에 대하여 외부 심사원 및 경영진 보고에 적합한 격식 있고 정중한 비즈니스 경어체(~합니다, ~입니다)로 브리핑을 작성하십시오: {st.session_state.search_question}
@@ -662,7 +1021,7 @@ with tab1:
                                 cache = genai.caching.CachedContent.get(cache_name)
                                 model = genai.GenerativeModel.from_cached_content(cached_content=cache)
                                 res = model.generate_content([gemini_file, prompt])
-                            except Exception as cache_err:
+                            except Exception:
                                 model = genai.GenerativeModel(model_name=MODEL_NAME)
                                 kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
                                 res = model.generate_content([gemini_file, f"[지식베이스]\n{kb_str}\n{prompt}"])
@@ -683,8 +1042,50 @@ with tab1:
 
             col1, col2 = st.columns([2, 1])
             with col1:
-                st.markdown(f"🔗 **[원본 문서 새 창에서 열기 (Ctrl+F 키워드 검색 지원)]({st.session_state.view_url})**")
-                st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
+                st.markdown(f"#### 📄 {top_file['name']}")
+                st.markdown(f"🔗 **[원본 문서 새 창에서 열기]({st.session_state.view_url})**")
+                
+                # 딥 서치 또는 PyMuPDF 설치 시: 검색어 음영(Highlight) 페이지 직행 뷰어 제공
+                if PYMUPDF_INSTALLED and "pdf" in top_file.get('mimeType', 'pdf').lower():
+                    viewer_mode = st.radio(
+                        "뷰어 모드 선택",
+                        ["🖍️ 검색어 본문 음영(하이라이트) 페이지 뷰어", "🌐 구글 드라이브 원본 스크롤 뷰어"],
+                        horizontal=True, label_visibility="collapsed"
+                    )
+                    if "음영" in viewer_mode:
+                        f_bytes = get_cached_file_bytes(top_file['id'])
+                        hl_kw = keyword if st.session_state.search_mode == "deep" else ""
+                        img_bytes, total_p, m_pages = render_highlighted_pdf_page(
+                            f_bytes, st.session_state.selected_page_num, hl_kw
+                        )
+                        if img_bytes:
+                            nav1, nav2, nav3, nav4 = st.columns([2, 2, 3, 3])
+                            with nav1:
+                                if st.button("◀ 이전 페이지", use_container_width=True) and st.session_state.selected_page_num > 1:
+                                    st.session_state.selected_page_num -= 1
+                                    st.rerun()
+                            with nav2:
+                                if st.button("다음 페이지 ▶", use_container_width=True) and st.session_state.selected_page_num < total_p:
+                                    st.session_state.selected_page_num += 1
+                                    st.rerun()
+                            with nav3:
+                                new_p = st.number_input("페이지 이동", min_value=1, max_value=max(1, total_p), value=st.session_state.selected_page_num, label_visibility="collapsed")
+                                if new_p != st.session_state.selected_page_num:
+                                    st.session_state.selected_page_num = new_p
+                                    st.rerun()
+                            with nav4:
+                                if m_pages:
+                                    st.caption(f"🖍️ 검색어 포함 페이지: p.{', p.'.join(map(str, m_pages[:8]))} (총 {total_p}p)")
+                                else:
+                                    st.caption(f"현재 {st.session_state.selected_page_num} / {total_p} 페이지")
+                            st.image(img_bytes, use_container_width=True)
+                        else:
+                            st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
+                    else:
+                        st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
+                else:
+                    st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
+                    
             with col2:
                 st.write("📋 **AI 문서 검토 및 규정 연계 브리핑:**")
                 if "오류" in st.session_state.final_briefing:
@@ -751,30 +1152,28 @@ with tab2:
 with tab3:
     st.markdown("### 🚨 실시간 법정 서류 및 인증 유효기간 대시보드")
     
-    if not st.session_state.auto_db:
-        sheet_service = get_sheets_service()
-        if sheet_service and SHEET_ID:
-            with st.spinner("구글 시트 마스터 DB와 동기화 중입니다..."):
-                try:
-                    result = sheet_service.spreadsheets().values().get(
-                        spreadsheetId=SHEET_ID, range="DB!A:J"
-                    ).execute()
-                    values = result.get('values', [])
-                    
-                    if len(values) > 1:
-                        headers = values[0]
-                        loaded_db = []
-                        for row in values[1:]:
-                            row_dict = {headers[i]: (row[i] if i < len(row) else "") for i in range(len(headers))}
-                            loaded_db.append(row_dict)
-                        st.session_state.auto_db = loaded_db
-                except Exception as e:
-                    st.warning("⚠️ 구글 시트 연동 실패: 스캔된 데이터가 없거나 접근 권한 확인이 필요합니다.")
+    ensure_auto_db_loaded()
 
     latest_dash_dict = {}
     for row in st.session_state.auto_db:
-        kw = row.get("키워드", "")
+        kw = str(row.get("키워드", "")).strip()
+        fname = str(row.get("파일명", "")).strip()
+        rtitle = str(row.get("문서_실제제목", "")).strip()
         if not kw or kw in ("PASS", "기타", "매뉴얼", "일반수료증"): continue
+        
+        # 기존 시트에 '교육_조준희' 등으로 저장된 데이터를 재스캔 없이 업종별 법정교육/HACCP정기교육으로 자동 정규화
+        if kw.startswith("교육_"):
+            combined_edu = f"{fname} {rtitle}"
+            if "HACCP" in combined_edu.upper() and ("정기" in combined_edu or "팀장" in combined_edu or "경영자" in combined_edu):
+                kw = f"HACCP정기교육_{fname.split(')')[1].split('.')[0] if ')' in fname else kw}"
+            elif any(ind in combined_edu for ind in ["식품제조가공업", "유가공업", "축산물가공업", "집유업", "수입식품", "유통전문판매업", "우유류판매업", "일반판매업", "건기식", "집단급식소", "책임수의사", "화장품책임판매"]):
+                for ind in ["식품제조가공업", "유가공업", "축산물가공업", "집유업", "수입식품등 수입판매업", "수입식품", "유통전문판매업", "우유류판매업", "일반판매업_건기식", "집단급식소", "책임수의사", "화장품책임판매"]:
+                    if ind in combined_edu:
+                        kw = f"법정위생교육_{ind}"
+                        break
+            else:
+                continue
+                
         exp_str = str(row.get("만료일", ""))
         sort_date = "9999-12-31" if exp_str == "영구" else exp_str
         if kw not in latest_dash_dict or sort_date > latest_dash_dict[kw]["sort_date"]:
@@ -787,7 +1186,7 @@ with tab3:
     today = datetime.date.today()
     processed_keys = set()
     
-    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "법정위생교육_", "HACCP교육_")
+    allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "법정위생교육_", "HACCP교육_", "HACCP정기교육")
     
     for key, meta in MASTER_DOC_REQUIREMENTS.items():
         processed_keys.add(key)
@@ -835,7 +1234,7 @@ with tab3:
             if key.startswith(allowed_dynamic_prefixes) or key == "HACCP정기교육":
                 exp_date_str = str(doc.get("만료일", ""))
                 cycle = str(doc.get("주기(개월)", "24"))
-                if key.startswith("법정위생교육_") or key == "HACCP정기교육":
+                if key.startswith("법정위생교육_") or key.startswith("HACCP정기교육"):
                     cycle = "12"
                 
                 dyn_row = {
@@ -874,7 +1273,6 @@ with tab3:
         expired_df = df_dashboard[df_dashboard["상태"].str.contains("경과|누락", na=False)]
         warning_df = df_dashboard[df_dashboard["상태"].str.contains("임박", na=False)]
         
-        # 3개월(90일) 및 6개월(180일) 이내 만료 도래 건수 산출
         due_90_count = 0
         due_180_count = 0
         for val in df_dashboard["D-Day"]:
@@ -887,7 +1285,6 @@ with tab3:
             except:
                 pass
         
-        # 1. 요약 위젯 및 긴급 알람 (5열 구성)
         cols = st.columns(5)
         cols[0].metric("전체 관리 서류", f"{len(df_dashboard)}건")
         cols[1].metric("🚨 기한경과 / 미등록", f"{len(expired_df)}건")
@@ -902,7 +1299,6 @@ with tab3:
 
         st.markdown("---")
         
-        # 2. 그룹핑 로직
         def style_status(val):
             if "누락" in str(val): return 'color: white; background-color: #000000; font-weight:bold'
             if "경과" in str(val): return 'color: white; background-color: #ef4444; font-weight:bold'
@@ -911,23 +1307,18 @@ with tab3:
             if "영구" in str(val): return 'color: white; background-color: #3b82f6'
             return ''
 
-        # 정기 검사 및 교육 (주기가 있는 서류 중 인증/보험 제외)
-        edu_insp_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["수질", "청소", "방충방서", "회수", "보건증", "위생교육", "HACCP정기교육"]))
+        edu_insp_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["수질", "청소", "방충방서", "회수", "보건증", "위생교육", "HACCP정기교육", "HACCP교육"]))
         df_edu_insp = df_dashboard[edu_insp_mask]
         
-        # HACCP 및 특수 인증서
         cert_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["HACCP_", "CHINA", "FSSC", "MILK", "무항생제", "유기", "FDA", "책임보험"]))
         df_cert = df_dashboard[cert_mask]
         
-        # 인허가 및 영구 서류
-        license_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["사업자", "공장등록", "건축물대장", "영업", "판매업", "급식소", "지하수개발"]))
+        license_mask = df_dashboard["구분(키워드)"].apply(lambda x: any(k in x for k in ["사업자", "공장등록", "건축물대장", "영업", "판매업", "급식소", "지하수개발", "식품제조가공업", "축산물가공업", "집유업", "화장품"]))
         df_license = df_dashboard[license_mask]
         
-        # 기타 잔여 서류
         handled_keys = set(df_edu_insp["구분(키워드)"]).union(set(df_cert["구분(키워드)"])).union(set(df_license["구분(키워드)"]))
         df_others = df_dashboard[~df_dashboard["구분(키워드)"].isin(handled_keys)]
         
-        # 3. 분할 표시
         with st.expander("📅 1. 정기 검사 및 법정 의무 교육 (주기별 갱신 대상)", expanded=True):
             st.dataframe(df_edu_insp.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
             
@@ -949,7 +1340,7 @@ with tab4:
     if not PYMUPDF_INSTALLED:
         st.error("🚨 딥 서치(본문 스니펫 미리보기) 기능을 위해 Github의 `requirements.txt`에 `PyMuPDF`를 추가해 주십시오.")
 
-    default_targets = ["인허가 서류", "인증서", "수질검사", "교육수료증"]
+    default_targets = ["인허가 서류", "인증서", "수질검사", "교육수료증", "기준서", "선행요건", "FSSC22000"]
     selected_targets = st.multiselect(
         "📌 스캔할 카테고리 선택 (관리 대상 폴더 선택)",
         options=list(FLAT_FOLDER_DB.keys()),
@@ -1217,14 +1608,87 @@ with tab4:
                         with st.expander("상세 오류 로그 확인"):
                             for err in error_log: st.write(err)
 
-# ----------------- TAB 5: HACCP 챗봇 (Multi-Agent System) -----------------
+# ----------------- TAB 5: HACCP 챗봇 (Multi-Agent System + 강조문구 원문 페이지 직행 뷰어) -----------------
+def extract_clickable_highlights(content_text):
+    """챗봇 답변에서 규정 코드(YS-...) 및 굵은 글씨(**...**) 강조 구문을 추출하여 원문 직행 버튼 목록을 생성합니다."""
+    refs = []
+    # 1. 사내 규정 및 기준서 코드 추출
+    for m in re.findall(r'YS-[가-힣A-Za-z0-9_-]+(?:\([가-힣,\s]+\))?', content_text):
+        m_clean = m.strip()
+        if m_clean not in refs:
+            refs.append(m_clean)
+    # 2. 굵은 글씨(**...**) 핵심 구문 추출
+    skip_words = {"최종 판정", "종합 판정", "수신", "발신", "문서번호", "제목", "기인증 범위 준수", "법적 한계선"}
+    for b in re.findall(r'\*\*([^*]+)\*\*', content_text):
+        b_clean = b.strip().rstrip(':').strip()
+        if 2 <= len(b_clean) <= 28 and not any(sw in b_clean for sw in skip_words):
+            if b_clean not in refs:
+                refs.append(b_clean)
+    return refs[:12]
+
 with tab5:
     st.markdown("### 💬 식품안전 및 HACCP 통합 검증 AI 시스템")
-    st.caption("사내 기준서, 선행요건 및 법적 인증 현황을 기반으로 3단계 교차 검증(기준 추출 ➔ 법규·인증 대조 ➔ 종합 보고)을 수행하여 정확한 판정 결과를 제공합니다.")
+    st.caption("사내 기준서, 선행요건 및 법적 인증 현황을 기반으로 3단계 교차 검증(기준 추출 ➔ 법규·인증 대조 ➔ 종합 보고)을 수행하며, 답변 하단의 강조 항목을 클릭하면 해당 기준서의 원문 페이지(형광펜 음영 표시)를 즉시 열람할 수 있습니다.")
     
-    for msg in st.session_state.chat_messages:
+    for msg_idx, msg in enumerate(st.session_state.chat_messages):
         with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+            # 마크다운 물결표(~) 취소선 오작동 방지 처리
+            safe_content = re.sub(r'(\d)~(\d)', r'\1&#126;\2', msg["content"])
+            st.markdown(safe_content, unsafe_allow_html=True)
+            
+            if msg["role"] == "assistant" and "안녕하십니까" not in msg["content"] and "오류" not in msg["content"]:
+                highlight_terms = extract_clickable_highlights(msg["content"])
+                if highlight_terms:
+                    st.markdown("##### 🔎 본문 강조 항목 및 근거 규정 원문 바로가기 (클릭 시 해당 문서 페이지 및 음영 표시)")
+                    btn_cols = st.columns(4)
+                    for t_idx, term in enumerate(highlight_terms):
+                        with btn_cols[t_idx % 4]:
+                            if st.button(f"📄 {term}", key=f"chat_ref_{msg_idx}_{t_idx}", use_container_width=True):
+                                with st.spinner(f"'{term}' 관련 기준서 원문 페이지 및 음영 좌표를 탐색 중입니다..."):
+                                    found_ref = locate_reference_in_drive(term)
+                                    if found_ref:
+                                        st.session_state.chat_doc_viewer = found_ref
+                                    else:
+                                        st.warning(f"'{term}' 항목과 직접 매칭되는 PDF 원문을 찾지 못했습니다. 좌측 딥 서치를 이용해 주십시오.")
+                                        
+    # 챗봇 내 인라인 원문 페이지 & 형광펜 음영 직행 뷰어
+    if st.session_state.chat_doc_viewer:
+        v_info = st.session_state.chat_doc_viewer
+        st.markdown("---")
+        with st.container():
+            h_col1, h_col2 = st.columns([8.5, 1.5])
+            with h_col1:
+                st.markdown(f"#### 🖍️ 근거 원문 직행 뷰어: **{v_info['name']}** (클릭 항목: `{v_info['ref_term']}` / 매칭 페이지: **p.{v_info['page']}**)")
+            with h_col2:
+                if st.button("✖ 뷰어 닫기", use_container_width=True):
+                    st.session_state.chat_doc_viewer = None
+                    st.rerun()
+                    
+            if PYMUPDF_INSTALLED:
+                f_bytes = get_cached_file_bytes(v_info['id'])
+                img_bytes, total_p, m_pages = render_highlighted_pdf_page(f_bytes, v_info['page'], v_info['highlight_kw'])
+                if img_bytes:
+                    nv1, nv2, nv3, nv4 = st.columns([2, 2, 3, 3])
+                    with nv1:
+                        if st.button("◀ 이전 페이지", key="chat_v_prev", use_container_width=True) and v_info['page'] > 1:
+                            st.session_state.chat_doc_viewer['page'] -= 1
+                            st.rerun()
+                    with nv2:
+                        if st.button("다음 페이지 ▶", key="chat_v_next", use_container_width=True) and v_info['page'] < total_p:
+                            st.session_state.chat_doc_viewer['page'] += 1
+                            st.rerun()
+                    with nv3:
+                        if m_pages:
+                            st.caption(f"🖍️ '{v_info['highlight_kw']}' 포함 페이지: p.{', p.'.join(map(str, m_pages[:8]))} (전체 {total_p}p)")
+                        else:
+                            st.caption(f"현재 {v_info['page']} / {total_p} 페이지")
+                    with nv4:
+                        st.link_button("🔗 구글 드라이브 새 창 열기", v_info['webViewLink'], use_container_width=True)
+                    st.image(img_bytes, use_container_width=True)
+                else:
+                    st.components.v1.iframe(f"https://drive.google.com/file/d/{v_info['id']}/preview", height=600, scrolling=True)
+            else:
+                st.components.v1.iframe(f"https://drive.google.com/file/d/{v_info['id']}/preview", height=600, scrolling=True)
             
     if prompt := st.chat_input("공정 관리 기준, 인증 범위, 법규 준수 사항 등을 입력해 주십시오. (예: 신규 멸균 공정 추가 시 필요한 인증 및 절차 검토)"):
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
@@ -1299,8 +1763,8 @@ with tab5:
                     [작성 수칙 및 어조(Tone & Manner) 절대 원칙]:
                     1. **공식 비즈니스 경어체 엄수**: '숲', '나비효과', '퉁치다', '건바이건' 등 비유적 표현이나 구어체, 가벼운 수식어 사용을 전면 금지합니다. 철저히 정중하고 격식 있는 경어체(~합니다, ~입니다, ~바랍니다)와 정확한 식품안전 전문 용어(한계기준, 중요관리점, 유효성 평가, 변경관리, 교차오염 방지, 선행요건 등)만을 사용하여 신뢰감 있게 서술하십시오.
                     2. **종합 판정 결론 최상단 명시**: 답변 첫 줄에 질의 사항에 대한 최종 판정 결론(현행 기준 적합 여부, 조건부 가능, 변경인증 필수 여부 등)을 두괄식으로 명확히 선언하십시오. 특히 품목별 미인증 공정이 존재하는 경우, 현 상태로는 완제품 출하가 불가하며 관할 기관의 변경인증(공정 추가)이 선행되어야 함을 명확히 명시하십시오.
-                    3. **전체 공정 체계 및 관리 기준 제시**: 해당 품목이 완제품으로 출하되기 위해 거쳐야 하는 전체 공정 흐름(전처리·가공 ➔ 살균·멸균 ➔ 여과 ➔ 무균포장 등)을 제시하고, 단계별 중요관리점(CCP) 한계기준과 모니터링 방법을 체계적으로 정리하십시오.
-                    4. **전사적 연계 영향 및 실무 관리 포인트**: 해당 사안이 타 생산 라인, 선행요건 관리기준, CIP 세척 밸리데이션, 알레르기 유발물질 교차오염 방지, 품목제조보고 및 식약처 HACCP / FSSC 22000 사후 심사에 미치는 연계 영향을 종합적으로 짚어주십시오."""
+                    3. **전체 공정 체계 및 관리 기준 제시**: 해당 품목이 완제품으로 출하되기 위해 거쳐야 하는 전체 공정 흐름을 제시할 때에는 화면 우측으로 잘리는 가로형 코드블록 대신 가독성 높은 마크다운 표(Table) 또는 번호 목록으로 정리하십시오. 또한 범위 표기 시 마크다운 취소선이 발생하지 않도록 물결표(~) 대신 하이픈(-)이나 '내지'를 사용하거나 정확히 표기하십시오.
+                    4. **전사적 연계 영향 및 원문 링크용 강조 표기**: 핵심 기준명(예: **작업장기준서**, **위생관리기준서**, **보관 및 운반관리 기준서**, **이물관리기준서**, **알러겐 관리기준서**, **YS-관리-P-210**)과 중요 핵심 키워드는 반드시 굵은 글씨(`**...**`)로 강조하여 사용자가 클릭 시 해당 원문 페이지로 이동할 수 있도록 작성하십시오."""
                     
                     final_chat = base_model.start_chat(history=history_for_gemini)
                     res_C = final_chat.send_message(prompt_C)
@@ -1308,8 +1772,10 @@ with tab5:
                     
                     status.update(label="✅ 규정 검증 및 검토 의견 작성 완료", state="complete", expanded=False)
                     
-                    message_placeholder.markdown(full_response)
+                    safe_full_response = re.sub(r'(\d)~(\d)', r'\1&#126;\2', full_response)
+                    message_placeholder.markdown(safe_full_response, unsafe_allow_html=True)
                     st.session_state.chat_messages.append({"role": "assistant", "content": full_response})
+                    st.rerun()
                     
                 except Exception as e:
                     err_msg = f"⚠️ 검증 시스템 가동 중 오류가 발생하였습니다: {e}"
