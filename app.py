@@ -38,7 +38,7 @@ KNOWLEDGE_BASE = {
     "공장현재인증현황": """[아산공장 전체 HACCP 인증 보유 현황]
     1. 유가공업(우유, 발효유 등) 및 식품제조가공업(가공두유, 원액두유, 음료 등) 등 다수의 품목별 HACCP 인증을 보유 중임.
     2. [기인증 공정 범위 팩트 - 품목별 엄격 구분]:
-       - 🚨 원액두유: 여과 및 살균 공정까지만 인증 완료. (멸균 및 포장 공정 인증 없음 ➔ 이 상태로는 팩 완제품 출하 불가)
+       - 원액두유: 여과(CCP-1P) 및 살균(CCP-2B) 공정에 한하여 인증 완료. (멸균 및 무균포장 공정은 인증 범위에 미포함되어 있으므로, 현행 인증만으로는 완제품 포장 출하가 불가하며 공정 추가 변경인증 필수)
        - 가공두유/과채음료 등: 살균 및 무균 포장(포장지 멸균) 공정까지 전체 라인 인증 완료.
        - 유제품 살균 라인(CCP-1B 살균): 일반우유, 가공유, 유크림 품목에 한정하여 인증됨. (유당분해우유는 살균 라인 인증 없음)
        - 유제품 멸균 라인(CCP-1B 멸균): 유당분해우유 포함 멸균 제품군 전체 인증됨.""",
@@ -228,7 +228,7 @@ if "auto_db" not in st.session_state: st.session_state.auto_db = []
 if "files_to_scan" not in st.session_state: st.session_state.files_to_scan = []
 
 if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = [{"role": "assistant", "content": "안녕하세요! 공장 내 위생, 공정, 기준서 등 궁금하신 점을 말씀해주시면, 사내 규정과 현재 인증 스펙을 다각도로 교차 검증하여 빠르고 정확하게 답변해 드립니다."}]
+    st.session_state.chat_messages = [{"role": "assistant", "content": "안녕하십니까. 연세유업 아산공장 식품안전 및 HACCP 통합 검증 시스템입니다. 공정 관리 기준, 선행요건, 법적 인허가 및 인증 규격에 대해 문의해 주시면 사내 기준서와 현행 법령을 교차 검증하여 명확히 안내해 드리겠습니다."}]
 
 custom_theme_css = """
 <style>
@@ -375,7 +375,7 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     
     if matched_files:
         st.session_state.found_files = matched_files
-        st.success(f"⚡ [DB 다이렉트 매칭] {len(matched_files)}개의 최신 서류를 0.1초 만에 불러왔습니다.")
+        st.success(f"⚡ [마스터 DB 연동] 관련 최신 문서 {len(matched_files)}건을 즉시 호출하였습니다.")
     elif folder_key and folder_key in FLAT_FOLDER_DB:
         target_id = FLAT_FOLDER_DB[folder_key]
         if not target_id.startswith("folder_id_"):
@@ -395,7 +395,7 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
                     page_token = res.get('nextPageToken')
                     if not page_token: break
             st.session_state.found_files = all_files
-            st.success(f"✅ 정밀 탐색 완료! 연관 문서 {len(st.session_state.found_files)}개 확보.")
+            st.success(f"✅ 정밀 탐색 완료: 연관 문서 {len(st.session_state.found_files)}건을 확보하였습니다.")
     else:
         st.session_state.found_files = []
 
@@ -409,7 +409,7 @@ def execute_deep_search(query_text):
         "target_folder_key": None, "gw_keyword": None, "priority_keywords": [], "last_file_id": ""
     })
     
-    with st.spinner("AI 딥 서치 및 본문 스니펫 추출 중... (수십 초 소요될 수 있습니다)"):
+    with st.spinner("본문 정밀 검색 및 스니펫 추출을 진행 중입니다..."):
         all_files = []
         page_token = None
         while True:
@@ -441,38 +441,42 @@ def execute_deep_search(query_text):
 # [4] 사이드바 (마스터 캐싱 및 원클릭 버튼)
 # ==========================================
 with st.sidebar:
-    st.markdown("### 🚀 출근용 시스템 워밍업")
-    st.caption("1일 1회 실행하여 AI 속도를 극대화하세요.")
+    st.markdown("### 🔄 마스터 지식베이스 동기화")
+    st.caption("최신 사내 규정 및 인증 현황을 AI 검증 엔진에 적재합니다. (1일 1회 권장)")
     
     if st.session_state.get("master_cache_name"):
-        st.success("✅ 마스터 지식베이스 캐시가 활성화되어 있습니다. (새로고침 방어 완료)")
+        st.success("✅ 마스터 지식베이스가 활성화되어 있습니다.")
         
-    if st.button("마스터 지식베이스 캐싱 (1일 1회 갱신)", use_container_width=True):
+    if st.button("마스터 지식베이스 갱신 및 적재", use_container_width=True):
         drive_service = get_drive_service()
         if not drive_service:
-            st.error("구글 드라이브 API 인증에 실패했습니다.")
+            st.error("구글 드라이브 API 인증에 실패하였습니다.")
         elif not st.session_state.auto_db:
-            st.warning("⚠️ 캐싱 전, 우측 메인 화면의 [3. 🚨 탑다운 대시보드] 탭을 한 번 눌러 구글 시트 최신 DB를 동기화해주세요!")
+            st.warning("⚠️ 적재 전, 우측 메인 화면의 [3. 🚨 탑다운 대시보드] 탭을 클릭하여 마스터 DB를 먼저 동기화해 주십시오.")
         else:
-            with st.spinner("구글 시트 DB에 등록된 '최신본' 매뉴얼 및 인증서만 핀셋 선별하여 적재 중입니다..."):
+            with st.spinner("마스터 DB에 등록된 최신 기준서, 선행요건 및 인증서를 선별하여 메모리에 적재 중입니다..."):
                 try:
                     uploaded_laws = []
                     target_pdfs = []
+                    seen_fids = set()
                     
-                    for row in st.session_state.auto_db:
+                    # 중복 파일 ID 제거 및 핵심 규정(기준서, 선행요건, FSSC, 인증서) 선별
+                    for row in reversed(st.session_state.auto_db):
                         kw = row.get("키워드", "")
+                        fid = row.get("파일 ID", "")
+                        fname = row.get("문서_실제제목") or row.get("파일명", "")
+                        if not fid or fid in seen_fids:
+                            continue
                         if kw in ("매뉴얼", "기준서", "선행요건") or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
-                            fid = row.get("파일 ID")
-                            fname = row.get("문서_실제제목") or row.get("파일명")
-                            if fid:
-                                target_pdfs.append({"id": fid, "name": fname})
+                            seen_fids.add(fid)
+                            target_pdfs.append({"id": fid, "name": fname})
                     
-                    if len(target_pdfs) > 15:
-                        target_pdfs = target_pdfs[:15]
-                        st.warning("⚠️ 핵심 문서가 너무 많아 AI 뇌 용량 초과 방지를 위해 최신 중요 문서 15개만 압축 캐싱합니다.")
+                    if len(target_pdfs) > 45:
+                        target_pdfs = target_pdfs[:45]
+                        st.info("ℹ️ 시스템 처리 용량 최적화를 위해 최신 핵심 기준서 및 인증서 45건을 우선 적재합니다.")
                     
                     if not target_pdfs:
-                        st.warning("⚠️ 캐싱할 매뉴얼 문서가 DB에 없습니다. 4번 탭에서 스캔 및 저장을 먼저 진행해주세요.")
+                        st.warning("⚠️ 적재할 기준서 또는 인증서 문서가 DB에 없습니다. 4번 탭에서 문서 스캔을 먼저 진행해 주십시오.")
                     else:
                         cache_progress = st.progress(0)
                         
@@ -504,7 +508,7 @@ with st.sidebar:
                         law_cache = genai.caching.CachedContent.create(
                             model=MODEL_NAME, 
                             display_name="audit_master_cache",
-                            system_instruction="당신은 최고 수준의 데이터를 처리하는 백그라운드 엔진입니다.",
+                            system_instruction="당신은 연세유업 아산공장의 식품안전 및 HACCP/FSSC22000 규정을 총괄 검증하는 전문 AI 시스템입니다. 모든 답변은 외부 심사원 및 경영진에게 보고되는 수준으로 격식 있고 정중한 비즈니스 경어체를 사용하십시오.",
                             contents=cache_contents,
                             ttl=datetime.timedelta(hours=12)
                         )
@@ -513,9 +517,9 @@ with st.sidebar:
                         with open(CACHE_META_FILE, "w") as f:
                             json.dump({"name": law_cache.name, "timestamp": time.time()}, f)
                             
-                        st.success(f"✅ 구글 시트 기반 정예 문서({len(target_pdfs)}개) 최적화 캐싱 완료! (12시간 유지)")
+                        st.success(f"✅ 핵심 기준서 및 인증 문서({len(target_pdfs)}건) 메모리 적재 완료 (12시간 유지)")
                 except Exception as e:
-                    st.error(f"드라이브 캐싱 중 오류 발생: {e}")
+                    st.error(f"지식베이스 적재 중 오류가 발생하였습니다: {e}")
                 
     st.markdown("---")
     
@@ -523,13 +527,13 @@ with st.sidebar:
 
     with sidebar_tab2:
         with st.form(key='search_form'):
-            st.caption("PDF 본문에 숨어있는 단어까지 찾아내어 앞뒤 문장을 미리 보여줍니다.")
+            st.caption("문서 본문 내 키워드를 정밀 탐색하여 해당 문맥을 미리 표시합니다.")
             manual_query = st.text_input("검색어 입력:", placeholder="예: 방충방서, 배합비", label_visibility="collapsed")
-            if st.form_submit_button("딥 서치 및 미리보기 🚀", use_container_width=True) and manual_query:
+            if st.form_submit_button("본문 정밀 검색 실행 🚀", use_container_width=True) and manual_query:
                 execute_deep_search(manual_query)
 
     with sidebar_tab1:
-        st.caption("페이퍼(수기) 일지를 제외한 100% 즉시 증빙 가능한 전산/드라이브 서류 전용 버튼입니다.")
+        st.caption("전산 및 클라우드 기반으로 즉시 열람·증빙이 가능한 심사 대응 문서 카테고리입니다.")
         
         with st.expander("📁 1. 영업 인허가 및 각종 인증서", expanded=True):
             if st.button("영업신고/공장등록/가설건축물", use_container_width=True): 
@@ -600,12 +604,12 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["🤖 원클릭 뷰어 & 스니펫", "�
 with tab1:
     if st.session_state.search_done:
         keyword = st.session_state.search_keyword
-        st.info(f"🔍 타겟팅 항목: **{keyword}**")
+        st.info(f"🔍 조회 항목: **{keyword}**")
         
         raw_files = [f for f in st.session_state.found_files if not is_blacklisted(f['name'], keyword)]
         
         if not raw_files and st.session_state.target_folder_key is not None and not st.session_state.priority_keywords:
-            st.warning("⚠️ 지정 폴더 내 구글 드라이브 일치 문서가 없습니다. (전자결재 문서를 확인하세요)")
+            st.warning("⚠️ 지정 폴더 내 일치하는 클라우드 문서가 없습니다. 하단의 전자결재(그룹웨어) 링크를 확인해 주십시오.")
             
         elif raw_files:
             for f in raw_files: f['year'] = extract_year_string(f['name'], f.get('createdTime', ''))
@@ -636,7 +640,7 @@ with tab1:
                 st.session_state.view_url = top_file['webViewLink']
                 st.session_state.preview_url = f"https://drive.google.com/file/d/{top_file['id']}/preview"
                 
-                with st.spinner("🤖 AI 문맥 확증 분석 중 (캐시 연동 시 0.1초 소요)..."):
+                with st.spinner("🤖 문서 적합성 및 관련 규정 교차 분석 중..."):
                     try:
                         file_bytes = download_file_bytes(get_drive_service(), top_file['id'])
                         file_ext = ".pdf" if "pdf" in top_file.get('mimeType', '').lower() else ".jpg"
@@ -648,10 +652,10 @@ with tab1:
                         
                         cache_name = st.session_state.get("master_cache_name")
                         
-                        prompt = f"""질문에 답하세요: {st.session_state.search_question}
-                        0. 🚨 [최우선 교차검증]: 방금 화면에 띄운 이 문서가 '{st.session_state.search_keyword}' 관련 서류가 확실하게 맞는지, 제목과 발급 기관/내용을 대조하여 1문장으로 확증(또는 경고) 하시오.
-                        1. 💡 사내 HACCP 기준 및 관련 법령 연계 요약
-                        2. 📄 문서 핵심 내용 요약 (발급일, 개정상태 등)"""
+                        prompt = f"""다음 조회 항목에 대하여 외부 심사원 및 경영진 보고에 적합한 격식 있고 정중한 비즈니스 경어체(~합니다, ~입니다)로 브리핑을 작성하십시오: {st.session_state.search_question}
+                        1. 📋 [문서 적합성 확인]: 현재 열람 중인 문서가 '{st.session_state.search_keyword}' 관련 증빙 서류에 부합하는지 문서 제목, 발급 기관 및 본문 내용을 대조하여 1문장으로 명확히 기술하십시오.
+                        2. 💡 [사내 기준 및 법령 연계 요약]: 본 문서와 연계된 사내 HACCP/선행요건 관리 기준 및 법적 요구사항을 요약하십시오.
+                        3. 📄 [문서 핵심 정보 요약]: 발급일, 유효기간(만료일), 개정 상태(Rev) 및 주요 핵심 내용을 간결하게 정리하십시오."""
                         
                         if cache_name:
                             try:
@@ -669,7 +673,7 @@ with tab1:
                             
                         st.session_state.final_briefing = res.text
                     except Exception as e:
-                        st.session_state.final_briefing = f"⚠️ 분석 오류가 발생했습니다. (API 확인 요망)\n에러 상세: {e}"
+                        st.session_state.final_briefing = f"⚠️ 분석 오류가 발생하였습니다. (API 연결 상태 확인 요망)\n상세 내역: {e}"
                     finally:
                         try:
                             genai.delete_file(gemini_file.name)
@@ -679,10 +683,10 @@ with tab1:
 
             col1, col2 = st.columns([2, 1])
             with col1:
-                st.markdown(f"🔗 **[원본 뷰어 새창에서 열기 (Ctrl+F 로 하이라이트 검색)]({st.session_state.view_url})**")
+                st.markdown(f"🔗 **[원본 문서 새 창에서 열기 (Ctrl+F 키워드 검색 지원)]({st.session_state.view_url})**")
                 st.components.v1.iframe(st.session_state.preview_url, height=600, scrolling=True)
             with col2:
-                st.write("🤖 **AI 브리핑 결과:**")
+                st.write("📋 **AI 문서 검토 및 규정 연계 브리핑:**")
                 if "오류" in st.session_state.final_briefing:
                     st.error(st.session_state.final_briefing)
                 else:
@@ -690,9 +694,9 @@ with tab1:
 
         if st.session_state.gw_keyword:
             gw_kw = st.session_state.gw_keyword
-            st.info(f"💡 전자결재(그룹웨어) 보관 서류: **{gw_kw}**")
+            st.info(f"💡 전자결재(그룹웨어) 연동 서류: **{gw_kw}**")
             gw_url = f"https://gw.yonseidairy.com/app/approval/doclist/viewer/all?keyword={urllib.parse.quote(gw_kw)}"
-            st.link_button(f"👉 그룹웨어 [{gw_kw}] 검색", gw_url, type="primary")
+            st.link_button(f"👉 그룹웨어 [{gw_kw}] 문서함 열기", gw_url, type="primary")
 
 # ----------------- TAB 2: 수동 탐색 -----------------
 with tab2:
@@ -706,11 +710,11 @@ with tab2:
 
     if st.button(f"'{selected_major}' 전체 문서 호출", type="primary"):
         if target_folder_id.startswith("folder_id_"):
-            st.warning(f"⚠️ '{selected_major}' 폴더의 실제 구글 드라이브 ID가 입력되지 않았습니다.")
+            st.warning(f"⚠️ '{selected_major}' 폴더의 구글 드라이브 경로가 설정되지 않았습니다.")
         else:
             drive_service = get_drive_service()
             if drive_service:
-                with st.spinner("폴더 인덱스 스캔 중..."):
+                with st.spinner("폴더 내 문서 목록을 조회 중입니다..."):
                     try:
                         t_folders = get_target_folder_ids(drive_service, target_folder_id)
                         all_disp = []
@@ -745,12 +749,12 @@ with tab2:
 
 # ----------------- TAB 3: 대시보드 -----------------
 with tab3:
-    st.markdown("### 🚨 실시간 서류 유효기간 대시보드")
+    st.markdown("### 🚨 실시간 법정 서류 및 인증 유효기간 대시보드")
     
     if not st.session_state.auto_db:
         sheet_service = get_sheets_service()
         if sheet_service and SHEET_ID:
-            with st.spinner("구글 시트 마스터 DB와 동기화 중..."):
+            with st.spinner("구글 시트 마스터 DB와 동기화 중입니다..."):
                 try:
                     result = sheet_service.spreadsheets().values().get(
                         spreadsheetId=SHEET_ID, range="DB!A:J"
@@ -765,7 +769,7 @@ with tab3:
                             loaded_db.append(row_dict)
                         st.session_state.auto_db = loaded_db
                 except Exception as e:
-                    st.warning("⚠️ 구글 시트 연동 실패: 스캔된 데이터가 없거나 접근 권한 문제가 있습니다.")
+                    st.warning("⚠️ 구글 시트 연동 실패: 스캔된 데이터가 없거나 접근 권한 확인이 필요합니다.")
 
     latest_dash_dict = {}
     for row in st.session_state.auto_db:
@@ -783,7 +787,6 @@ with tab3:
     today = datetime.date.today()
     processed_keys = set()
     
-    # 💡 무한 확장 허용 접두사에 업종별 위생교육 추가
     allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "법정위생교육_", "HACCP교육_")
     
     for key, meta in MASTER_DOC_REQUIREMENTS.items():
@@ -871,17 +874,31 @@ with tab3:
         expired_df = df_dashboard[df_dashboard["상태"].str.contains("경과|누락", na=False)]
         warning_df = df_dashboard[df_dashboard["상태"].str.contains("임박", na=False)]
         
-        # 1. 요약 위젯 및 긴급 알람
-        cols = st.columns(4)
+        # 3개월(90일) 및 6개월(180일) 이내 만료 도래 건수 산출
+        due_90_count = 0
+        due_180_count = 0
+        for val in df_dashboard["D-Day"]:
+            try:
+                d_val = int(val)
+                if 0 <= d_val <= 90:
+                    due_90_count += 1
+                if 0 <= d_val <= 180:
+                    due_180_count += 1
+            except:
+                pass
+        
+        # 1. 요약 위젯 및 긴급 알람 (5열 구성)
+        cols = st.columns(5)
         cols[0].metric("전체 관리 서류", f"{len(df_dashboard)}건")
-        cols[1].metric("🚨 누락/경과 (즉시조치)", f"{len(expired_df)}건")
+        cols[1].metric("🚨 기한경과 / 미등록", f"{len(expired_df)}건")
         cols[2].metric("⚠️ 30일 내 만료 임박", f"{len(warning_df)}건")
-        cols[3].metric("✅ 영구/정상 서류", f"{len(df_dashboard) - len(expired_df) - len(warning_df)}건")
+        cols[3].metric("📅 3개월 / 6개월 내 도래", f"{due_90_count}건 / {due_180_count}건")
+        cols[4].metric("✅ 영구 / 정상 서류", f"{len(df_dashboard) - len(expired_df) - len(warning_df)}건")
         
         if not expired_df.empty:
-            st.error(f"🚨 **즉시 갱신 또는 스캔이 필요한 서류가 {len(expired_df)}건 있습니다!**\n" + ", ".join(expired_df["서류명(마스터)"].tolist()))
+            st.error(f"🚨 **기한 경과 또는 미등록으로 즉시 조치가 필요한 서류가 {len(expired_df)}건 있습니다.**\n\n" + ", ".join(expired_df["서류명(마스터)"].tolist()))
         if not warning_df.empty:
-            st.warning(f"⚠️ **한 달 내로 만료되는 서류가 {len(warning_df)}건 있습니다!**\n" + ", ".join(warning_df["서류명(마스터)"].tolist()))
+            st.warning(f"⚠️ **30일 이내 만료 예정인 갱신 대상 서류가 {len(warning_df)}건 있습니다.**\n\n" + ", ".join(warning_df["서류명(마스터)"].tolist()))
 
         st.markdown("---")
         
@@ -911,30 +928,30 @@ with tab3:
         df_others = df_dashboard[~df_dashboard["구분(키워드)"].isin(handled_keys)]
         
         # 3. 분할 표시
-        with st.expander("📅 1. 정기 검사 및 법정 의무 교육 (주기별 갱신 요망)", expanded=True):
+        with st.expander("📅 1. 정기 검사 및 법정 의무 교육 (주기별 갱신 대상)", expanded=True):
             st.dataframe(df_edu_insp.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
             
-        with st.expander("🥇 2. HACCP 및 주요 시스템 인증서", expanded=True):
+        with st.expander("🥇 2. HACCP 및 주요 식품안전 시스템 인증서", expanded=True):
             st.dataframe(df_cert.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
             
         with st.expander("📁 3. 영업 인허가 및 시설 등록증 (영구 보존 서류)", expanded=False):
             st.dataframe(df_license.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
             
         if not df_others.empty:
-            with st.expander("💡 4. 기타 동적 추가 서류", expanded=False):
+            with st.expander("💡 4. 기타 시설 및 동적 관리 서류", expanded=False):
                 st.dataframe(df_others.style.map(style_status, subset=['상태']), hide_index=True, use_container_width=True)
 
 # ----------------- TAB 4: AI 마스터 DB -----------------
 with tab4:
     st.markdown("### ⚙️ 문서 AI 일괄 스캔 및 DB 동기화 (관리자용)")
-    st.markdown("유효기간 관리가 필요한 지정 폴더들의 문서를 AI가 스캔하여 마스터 DB에 자동 업데이트합니다.")
+    st.markdown("유효기간 및 개정 관리가 필요한 지정 폴더의 문서를 AI가 정밀 스캔하여 마스터 DB에 자동 업데이트합니다.")
     
     if not PYMUPDF_INSTALLED:
-        st.error("🚨 딥 서치(본문 스니펫 미리보기) 기능을 위해 Github의 `requirements.txt`에 `PyMuPDF`를 추가해 주세요.")
+        st.error("🚨 딥 서치(본문 스니펫 미리보기) 기능을 위해 Github의 `requirements.txt`에 `PyMuPDF`를 추가해 주십시오.")
 
     default_targets = ["인허가 서류", "인증서", "수질검사", "교육수료증"]
     selected_targets = st.multiselect(
-        "📌 스캔할 카테고리 선택 (유효기간 관리가 필요한 항목만 선택)",
+        "📌 스캔할 카테고리 선택 (관리 대상 폴더 선택)",
         options=list(FLAT_FOLDER_DB.keys()),
         default=default_targets
     )
@@ -943,12 +960,12 @@ with tab4:
     with col1:
         if st.button("🔍 1단계: 대상 파일 조회 (스캔 전 확인)", type="secondary", use_container_width=True):
             if not selected_targets:
-                st.error("스캔할 카테고리를 하나 이상 선택해주세요.")
+                st.error("스캔할 카테고리를 하나 이상 선택해 주십시오.")
             else:
                 service = get_drive_service()
                 files_to_scan = []
                 
-                with st.spinner("선택된 폴더 및 하위 폴더의 문서들을 검색 중..."):
+                with st.spinner("선택된 폴더 및 하위 폴더의 문서들을 검색 중입니다..."):
                     for cat in selected_targets:
                         tf_id = FLAT_FOLDER_DB[cat]
                         if tf_id.startswith("folder_id_"): continue
@@ -969,17 +986,17 @@ with tab4:
                     
                 valid_files = [f for f in files_to_scan if "pdf" in f['mimeType'].lower() or "image" in f['mimeType'].lower()]
                 
-                st.info(f"📂 총 **{len(files_to_scan)}개**의 파일이 발견되었습니다.")
+                st.info(f"📂 총 **{len(files_to_scan)}개**의 파일이 확인되었습니다.")
                 if len(valid_files) == 0:
-                    st.error("🚨 스캔 가능한 PDF나 이미지 파일이 0개입니다! (hwp, docx 등은 스캔 불가. PDF 변환 요망)")
+                    st.error("🚨 스캔 가능한 PDF 또는 이미지 파일이 없습니다. (문서 포맷 확인 요망)")
                 else:
-                    st.success(f"✅ 그 중 AI 스캔이 가능한 문서(PDF/이미지)는 **{len(valid_files)}개** 입니다.")
+                    st.success(f"✅ AI 스캔 대상 문서(PDF/이미지)는 총 **{len(valid_files)}개**입니다.")
                 st.session_state.files_to_scan = valid_files
 
     with col2:
         if st.button("🔄 2단계: 초정밀 전체 스캔 및 시트 저장 실행", type="primary", use_container_width=True):
             if "files_to_scan" not in st.session_state or not st.session_state.files_to_scan:
-                st.warning("먼저 '1단계: 대상 파일 조회' 버튼을 눌러주세요.")
+                st.warning("먼저 '1단계: 대상 파일 조회' 버튼을 클릭해 주십시오.")
             else:
                 service = get_drive_service()
                 sheet_service = get_sheets_service()
@@ -1003,31 +1020,30 @@ with tab4:
                         for row in sc_vals:
                             if row: scanned_ids.add(row[0])
                     except Exception as e:
-                        update_log("⚠️ SCANNED 시트를 찾을 수 없거나 비어 있습니다. 새로 생성하거나 처음부터 스캔합니다.")
+                        update_log("⚠️ SCANNED 시트를 찾을 수 없거나 비어 있습니다. 초기 스캔을 시작합니다.")
                 
                 files_to_process = [f for f in st.session_state.files_to_scan if f['id'] not in scanned_ids]
                 skipped_count = len(st.session_state.files_to_scan) - len(files_to_process)
                 
                 if skipped_count > 0:
-                    update_log(f"⏭️ 이미 스캔 완료된 문서 {skipped_count}개를 건너뛰고 남은 {len(files_to_process)}개만 진행합니다.")
+                    update_log(f"⏭️ 기스캔 완료 문서 {skipped_count}건을 제외하고 신규 {len(files_to_process)}건을 분석합니다.")
                 
                 total = len(files_to_process)
                 if total == 0:
-                    update_log("✅ 모든 문서가 이미 최신 상태로 스캔 완료되었습니다!")
+                    update_log("✅ 모든 문서가 이미 최신 상태로 스캔 완료되었습니다.")
                     st.success("새로 추가된 문서가 없어 스캔을 종료합니다.")
                 else:
                     model = genai.GenerativeModel(MODEL_NAME)
                     
-                    # 💡 [핵심 기술 3] 교육 수료증 핀셋 추출 룰 추가
-                    prompt = """이 문서의 핵심 메타데이터를 초정밀하게 추출해. (심사 대응용 무결성 데이터)
+                    prompt = """본 문서의 핵심 메타데이터를 정밀하게 추출하십시오. (공식 심사 대응용 무결성 데이터)
                     
-                    [행동 강령 - 환각 원천 차단]
-                    1. 문서의 날짜를 절대 임의로 계산하거나 유추하지 마. 활자나 도장으로 명확히 찍힌 날짜만 추출하고, 없으면 "미상"으로 기재해.
-                    2. 단순히 파일명이나 단어 몇 개가 겹친다고 성급히 분류하지 마. 발급 기관, 문서 목적, 하단 직인 유무를 종합 분석하여 확신할 때만 마스터 키워드를 부여해.
-                    3. 문서 우측 상단이나 하단에 개정번호(Rev.0, Rev.1 등)가 있으면 반드시 추출해.
+                    [검증 및 추출 원칙]
+                    1. 문서의 날짜를 임의로 추정하지 마십시오. 본문 또는 직인 옆에 명시된 날짜만 추출하고, 확인이 불가능할 경우 "미상"으로 기재하십시오.
+                    2. 파일명만으로 분류하지 마시고, 발급 기관, 문서 목적, 하단 직인 유무를 종합 분석하여 해당하는 마스터 키워드를 부여하십시오.
+                    3. 문서 상단 또는 하단에 개정번호(Rev.0, Rev.1 등)가 기재되어 있는 경우 반드시 추출하십시오.
                     
                     [마스터 키워드 맵핑 규칙 - 엄수]
-                    🚨 아래 정해진 키워드 중 완벽히 일치하는 1개로 변환해서 "키워드" 값에 넣어.
+                    🚨 아래 지정된 키워드 중 정확히 일치하는 1개로 변환하여 "키워드" 값에 기재하십시오.
                     - 사업자등록증 -> "사업자등록"
                     - 공장등록증명서 -> "공장등록"
                     - 건축물대장 -> "건축물대장"
@@ -1060,37 +1076,37 @@ with tab4:
                     - FDA 식품시설등록(FFR) -> "FDA_FFR"
                     - FDA 공장등록(FCE) -> "FDA_FCE"
                     - 책임보험/영업배상/PL -> "책임보험"
-                    - 사내 규정, 기준서, 위기대응 절차 등 유효기간이 없는 지침서는 무조건 -> "매뉴얼"
+                    - 사내 규정(YS-규정 등), 품목별 HACCP 기준서/PLAN/공정설명서, 파트별 선행요건 관리기준서 등 지침서는 무조건 -> "매뉴얼"
                     
-                    💡 [교육 수료증 분류 룰 (매우 중요)] 💡
-                    - 기존영업자 대상 식품/축산물 위생교육 수료증은 반드시 수료한 '업종'을 확인하여 묶어. (예: "법정위생교육_식품제조가공업", "법정위생교육_유가공업", "법정위생교육_수입식품")
+                    💡 [교육 수료증 분류 규칙] 💡
+                    - 기존영업자 대상 식품/축산물 위생교육 수료증은 반드시 수료한 '업종'을 확인하여 지정하십시오. (예: "법정위생교육_식품제조가공업", "법정위생교육_유가공업", "법정위생교육_수입식품")
                     - HACCP 팀장교육 또는 HACCP 정기교육 수료증은 무조건 -> "HACCP정기교육"
-                    - 위 2가지 법정 의무교육이 아닌 1회성 특강, 실무 교육 등은 -> "일반수료증"
+                    - 위 2가지 법정 의무교육 외의 일반 직무 교육, 1회성 특강 수료증은 -> "일반수료증"
                     
-                    💡 [무한 확장(Dynamic) 규칙] 💡
-                    - 가설건축물, 수질검사, 보건증 등 개체가 여러 개인 문서는 아래 허용된 접두사로 시작하게 키워드를 스스로 창조해.
+                    💡 [동적 확장(Dynamic) 규칙] 💡
+                    - 가설건축물, 수질검사, 보건증 등 개별 관리 대상 문서는 아래 허용된 접두사로 시작하도록 키워드를 생성하십시오.
                     - 허용 접두사: "가설건축물_", "수질검사_", "보건증_"
                     - 예시: "가설건축물_8동", "보건증_홍길동"
                     
-                    🚨 [예외 처리 - 버리지 말고 무조건 기록] 🚨
-                    - 영수증, 회식 기안서, 관련 없는 사진 등 아예 쓸모없는 쓰레기 데이터는 절대 누락시키지 말고 무조건 "기타" 로 분류해. (절대 PASS 금지)
+                    🚨 [기타 문서 예외 처리] 🚨
+                    - 위 분류에 해당하지 않는 일반 기안서나 기타 참고 자료는 누락시키지 말고 "기타"로 분류하십시오. (절대 PASS 금지)
                     
-                    만료일이 안 적혀 있어도 주기가 명확한 서류는 발급일 기준으로 만료일을 계산해서 적고, 만료일이 아예 없는 영구 서류나 매뉴얼은 '영구'로 기재해. 
+                    만료일이 명시되어 있지 않더라도 법정 주기가 명확한 서류는 발급일 기준으로 만료일을 산출하여 기재하고, 유효기간이 없는 영구 보존 서류나 매뉴얼은 '영구'로 기재하십시오.
                     
-                    반드시 JSON 형식으로만 응답할 것.
+                    반드시 JSON 형식으로만 응답하십시오.
                     형식: {
                         "키워드": "법정위생교육_식품제조가공업", 
                         "문서_실제제목": "본문 공식 명칭", 
                         "발급일": "YYYY-MM-DD", 
                         "만료일": "YYYY-MM-DD",
                         "개정번호": "Rev.0",
-                        "분류근거": "발급기관 및 본문 내용 매핑"
+                        "분류근거": "발급기관 및 본문 내용에 따른 분류 근거"
                     }"""
                     
                     allowed_dynamic_prefixes = ("가설건축물_", "수질검사_", "보건증_", "법정위생교육_", "HACCP교육_")
                     
                     for i, f in enumerate(files_to_process):
-                        update_log(f"⏳ [{i+1}/{total}] 문서 초정밀 분석 중: {f['name']}")
+                        update_log(f"⏳ [{i+1}/{total}] 문서 정밀 분석 중: {f['name']}")
                         progress_bar.progress((i + 1) / total)
                         
                         fid = f['id']
@@ -1101,7 +1117,7 @@ with tab4:
                             elif "png" in mime: ext = ".png"
                             elif "jpeg" in mime or "jpg" in mime: ext = ".jpg"
                             else: 
-                                update_log(f"⏭️ [{i+1}/{total}] 지원되지 않는 파일 패스: {f['name']}")
+                                update_log(f"⏭️ [{i+1}/{total}] 미지원 포맷 제외: {f['name']}")
                                 continue
                                 
                             file_bytes = download_file_bytes(service, fid)
@@ -1117,27 +1133,27 @@ with tab4:
                                 time.sleep(5)
                                 wait_time += 5
                                 if wait_time % 15 == 0:
-                                    update_log(f"⏳ [{i+1}/{total}] 구글 AI 서버 판독 대기 중... ({wait_time}초 경과)")
+                                    update_log(f"⏳ [{i+1}/{total}] 문서 데이터 처리 대기 중... ({wait_time}초 경과)")
                                 up_file = genai.get_file(up_file.name)
                                 
                             if up_file.state.name == "FAILED":
-                                raise Exception("구글 서버 판독 거부 (파일 손상 의심)")
+                                raise Exception("문서 파일 판독 불가 (파일 손상 확인 요망)")
                             elif up_file.state.name == "PROCESSING":
-                                raise Exception("구글 서버 응답 지연 (5분 초과)")
+                                raise Exception("서버 응답 시간 초과 (5분 초과)")
                             
-                            time.sleep(3.5) # API 호출 제한 방어
+                            time.sleep(3.5)
                             ai_res = model.generate_content([up_file, prompt])
                             
                             text_res = ai_res.text.strip()
                             json_match = re.search(r'\{.*\}', text_res, re.DOTALL)
                             if not json_match:
-                                raise Exception("AI 응답 형식이 올바르지 않습니다.")
+                                raise Exception("AI 응답 데이터 형식 오류")
                             
                             parsed = json.loads(json_match.group(0))
                             kw = parsed.get("키워드", "")
                             
                             if kw not in ("PASS", "기타", "매뉴얼", "일반수료증", "HACCP정기교육") and kw not in MASTER_DOC_REQUIREMENTS and not kw.startswith(allowed_dynamic_prefixes):
-                                update_log(f"🛡️ 미인가 키워드 강제 '기타' 편입: {kw}")
+                                update_log(f"🛡️ 미지정 키워드 '기타' 분류 전환: {kw}")
                                 kw = "기타"
                                 parsed["키워드"] = kw
                             
@@ -1173,9 +1189,9 @@ with tab4:
                                         st.session_state.auto_db.append(row_dict)
                                         
                                     except Exception as e:
-                                        update_log(f"⚠️ 시트 저장 실패: {e}")
+                                        update_log(f"⚠️ 시트 기록 오류: {e}")
                                         
-                            update_log(f"✅ [{i+1}/{total}] 추출 및 안전 저장 완료! ({kw})")
+                            update_log(f"✅ [{i+1}/{total}] 메타데이터 추출 및 DB 반영 완료 ({kw})")
                             
                             genai.delete_file(up_file.name)
                             os.remove(tmp_path)
@@ -1183,34 +1199,34 @@ with tab4:
                         except Exception as e:
                             error_msg = str(e)
                             if "429" in error_msg or "quota" in error_msg.lower():
-                                update_log(f"⚠️ [{i+1}/{total}] 구글 API 호출 제한! 15초 대기 후 다음 파일 진행...")
+                                update_log(f"⚠️ [{i+1}/{total}] API 요청 한도 조절을 위해 15초 대기 후 재개합니다...")
                                 time.sleep(15)
                             elif "time" in error_msg.lower() or "connect" in error_msg.lower() or "503" in error_msg:
-                                update_log(f"🔌 [{i+1}/{total}] 통신 지연 발생! 해당 파일 스킵 후 계속 진행: {error_msg}")
-                                error_log.append(f"🔌 '{f['name']}' 스캔 지연 패스: {error_msg}")
+                                update_log(f"🔌 [{i+1}/{total}] 네트워크 지연으로 해당 파일 건너뜀: {error_msg}")
+                                error_log.append(f"🔌 '{f['name']}' 처리 지연 제외: {error_msg}")
                                 continue
                             else:
-                                update_log(f"❌ [{i+1}/{total}] 스캔 실패 (해당 파일 패스): {error_msg}")
-                                error_log.append(f"❌ '{f['name']}' 스캔 실패: {error_msg}")
+                                update_log(f"❌ [{i+1}/{total}] 스캔 실패 (제외): {error_msg}")
+                                error_log.append(f"❌ '{f['name']}' 스캔 오류: {error_msg}")
                     
-                    update_log("🎉 스캔 완료! 모든 분석 결과가 1건도 빠짐없이 구글 시트에 누적 저장되었습니다.")
-                    st.success("스캔 및 시트 실시간 업데이트가 완료되었습니다!")
+                    update_log("🎉 전체 스캔 및 마스터 DB 실시간 동기화가 완료되었습니다.")
+                    st.success("문서 스캔 및 구글 시트 DB 업데이트가 완료되었습니다.")
                     
                     if error_log:
-                        st.error(f"⚠️ {len(error_log)}개의 문서 스캔 중 오류가 발생했습니다. 아래에서 확인하세요.")
-                        with st.expander("에러 상세 로그 보기"):
+                        st.error(f"⚠️ 총 {len(error_log)}건의 문서 처리 중 확인이 필요한 내역이 있습니다.")
+                        with st.expander("상세 오류 로그 확인"):
                             for err in error_log: st.write(err)
 
 # ----------------- TAB 5: HACCP 챗봇 (Multi-Agent System) -----------------
 with tab5:
-    st.markdown("### 💬 HACCP Multi-Agent 전문 챗봇")
-    st.caption("단일 AI의 환각을 방지하기 위해 3명의 AI(추출 ➔ 검증 ➔ 답변)가 릴레이로 협업하여 전사적이고 범용적인 규제 판정을 내립니다.")
+    st.markdown("### 💬 식품안전 및 HACCP 통합 검증 AI 시스템")
+    st.caption("사내 기준서, 선행요건 및 법적 인증 현황을 기반으로 3단계 교차 검증(기준 추출 ➔ 법규·인증 대조 ➔ 종합 보고)을 수행하여 정확한 판정 결과를 제공합니다.")
     
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             
-    if prompt := st.chat_input("HACCP 관련 질문을 입력하세요 (예: 멸균 공정을 새로 추가하려는데 어떻게 해야 해?)"):
+    if prompt := st.chat_input("공정 관리 기준, 인증 범위, 법규 준수 사항 등을 입력해 주십시오. (예: 신규 멸균 공정 추가 시 필요한 인증 및 절차 검토)"):
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -1218,7 +1234,7 @@ with tab5:
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             
-            with st.status("🤖 다중 에이전트 시스템(MAS) 가동 중...", expanded=True) as status:
+            with st.status("🛡️ 3단계 규정 교차 검증 프로세스 가동 중...", expanded=True) as status:
                 try:
                     kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
                     cache_name = st.session_state.get("master_cache_name")
@@ -1233,67 +1249,70 @@ with tab5:
                         base_model = genai.GenerativeModel(model_name=MODEL_NAME)
                     
                     # ---------- Agent A: 정보 추출 및 분석 ----------
-                    st.write("🕵️‍♂️ **[Agent A]** 질문 의도 및 전체 연계 공정(End-to-End) 추출 중...")
-                    prompt_A = f"""[Agent A 임무: 팩트 추출기]
-                    지식베이스:\n{kb_str}\n\n사용자 질문: {prompt}
+                    st.write("📋 **[1단계: 기준 추출]** 질의 의도 분석 및 전후 연계 공정(End-to-End) 관련 기준 추출 중...")
+                    prompt_A = f"""[Agent A 임무: 사내 기준 및 공정 데이터 추출]
+                    지식베이스:\n{kb_str}\n\n사용자 질의: {prompt}
                     
-                    임무: 사용자의 질문에 답변하기 위한 객관적인 팩트 리포트를 작성하시오.
+                    임무: 사용자의 질의에 정확히 답변하기 위한 객관적인 기준 데이터 리포트를 작성하십시오.
                     
-                    💡 [범용적 End-to-End 추출 원칙 (절대 규칙)]:
-                    사용자가 특정 단일 공정(예: 살균, 여과)이나 특정 반제품(예: 원액두유, 배양액)에 국한하여 질문하더라도, 절대 그 부분만 단편적으로 추출하지 마시오.
-                    지식베이스를 탐색하여 해당 제품/공정과 필연적으로 연결되는 [원료 ➔ 메인 가공 및 살균 ➔ 여과 ➔ 무균 포장(포장지 멸균) ➔ 완제품 출하]까지의 **'전체 공정 흐름(End-to-End)과 이와 연계된 모든 중요관리점(CCP)'**을 빠짐없이 포괄적으로 찾아내어 리포트에 포함시키시오."""
+                    [전 공정(End-to-End) 통합 추출 원칙]:
+                    사용자가 특정 단일 공정(예: 살균, 여과)이나 특정 반제품(예: 원액두유, 배양액)에 국한하여 질의하더라도 해당 구간만 단편적으로 추출하지 마십시오.
+                    지식베이스 및 적재된 기준서를 탐색하여 해당 품목·공정과 직결되는 [원료 수불 및 전처리 ➔ 주 가공 및 살균/멸균 ➔ 여과 ➔ 무균 충전·포장(포장지 멸균) ➔ 완제품 출하]까지의 전체 공정 체계와 이에 따른 모든 중요관리점(CCP) 및 선행요건 기준을 포괄적으로 도출하여 기술하십시오."""
                     res_A = base_model.generate_content(prompt_A).text
                     
                     # ---------- Agent B: 사내 규정 교차 검증 (범용 트랙 스위칭) ----------
-                    st.write("⚖️ **[Agent B]** 사내 규정 및 End-to-End 인증 현황 교차 검증 중...")
+                    st.write("⚖️ **[2단계: 법규·인증 검증]** 사내 매뉴얼 및 품목별 법적 인증 범위 교차 검증 중...")
                     
-                    prompt_B = f"""[Agent B 임무: 규제 및 매뉴얼 검수관]
-                    [현재 아산공장 인증 매핑 팩트]: 지식베이스의 '공장현재인증현황' 참고.
+                    prompt_B = f"""[Agent B 임무: 법규 및 인증 규격 적격성 검수]
+                    [현재 아산공장 인증 보유 현황]: 지식베이스의 '공장현재인증현황' 참고.
                     
-                    [Agent A가 추출한 분석 내용]:
+                    [Agent A가 도출한 공정 및 기준 분석 내용]:
                     {res_A}
                     
-                    임무: 메모리에 적재된 마스터 지식베이스 및 실제 HACCP 인증서를 대조하여 다음 트랙 중 하나로 교차 검증하시오.
-                    트랙 1 (인증/신제품/공정 문의): 
-                    - 🚨 [품목별 법적 독립성 절대 엄수 (교차대용 불가)]: HACCP은 철저히 '개별 품목' 단위 인증입니다. A품목(예: 가공두유)이 무균포장 공정 인증을 받았다고 해서, B품목(예: 원액두유)이 물리적으로 그 기계 라인을 탄다고 법적인 무균포장 인증을 받은 것으로 인정되지 않습니다!
-                    - 사용자가 묻는 특정 품목의 인증서나 지식베이스상에 '여과, 살균' 등 일부 공정만 적혀있다면, "해당 품목을 완제품 팩으로 팔기 위해서는 멸균 및 포장 공정에 대한 HACCP 인증(또는 공정 추가)을 관할 기관에서 새로 받아야 한다"고 매몰차게 지적하시오. 기계 라인이 연결되어 있다고 해서 법적 인증을 마음대로 합치거나 공유(환각)하지 마시오.
-                    트랙 2 (일반 규정/지식 문의): 작업장 환경, 위생, 기준서 등 일반적인 내용은 Agent A의 팩트가 정확한지 확인 후 통과시키시오."""
+                    임무: 메모리에 적재된 마스터 지식베이스, 기준서 및 실제 HACCP/FSSC22000 인증서를 대조하여 다음 기준에 따라 엄격히 교차 검증하십시오.
+                    
+                    트랙 1 (인증 범위 / 신제품 도입 / 공정 변경 질의): 
+                    - [품목별 법적 독립성 엄수 원칙]: 식품위생법 및 축산물위생관리법상 HACCP 인증은 철저히 '개별 품목(유형)' 단위로 부여됩니다. 타 품목(예: 가공두유)이 무균포장 공정 인증을 보유하고 있더라도, 질의 대상 품목(예: 원액두유)이 물리적으로 동일한 설비 라인을 공유한다는 이유만으로 법적 인증 효력이 자동 승계되거나 공유되지 않습니다.
+                    - 질의 대상 품목의 인증서 및 기준서상 특정 공정(예: 여과, 살균)까지만 인증이 완료되어 있다면, "완제품 포장 출하를 위해서는 누락된 후속 공정(멸균 및 포장 등)에 대한 HACCP 변경인증(공정 추가) 및 품목제조보고를 관할 기관으로부터 사전 취득해야 함"을 법적 근거에 입각하여 명확히 판정하십시오.
+                    
+                    트랙 2 (일반 위생 규정 / 작업장 기준 / 선행요건 질의):
+                    - 작업장 환경, 개인위생, 방충방서, CIP, 보관·운송 등 일반 기준 질의는 Agent A가 추출한 수치와 주기가 사내 기준서와 정확히 일치하는지 검증하여 확정하십시오."""
                     res_B = base_model.generate_content(prompt_B).text
                     
                     # ---------- Agent C: 실무 맞춤형 최종 답변 ----------
-                    st.write("📝 **[Agent C]** 다각도 실무 통찰 반영 답변 생성 중...")
+                    st.write("📑 **[3단계: 종합 보고서 작성]** 경영진 및 대외 심사 대응용 공식 검토 의견 생성 중...")
                     
                     history_for_gemini = []
                     for m in st.session_state.chat_messages[-6:]:
                         if m["role"] == "assistant":
-                            if "안녕하세요!" in m["content"]: continue
+                            if "안녕하십니까" in m["content"] or "안녕하세요!" in m["content"]: continue
                             history_for_gemini.append({"role": "model", "parts": [m["content"]]})
                         else:
                             history_for_gemini.append({"role": "user", "parts": [m["content"]]})
                     
-                    prompt_C = f"""[Agent C 임무: 실무 답변 담당]
-                    [Agent B의 교차검증 판정 결과]:
+                    prompt_C = f"""[Agent C 임무: 공식 심사 대응 및 경영진 보고용 최종 답변 작성]
+                    [Agent B의 법규·인증 교차검증 판정 결과]:
                     {res_B}
                     
-                    임무: 위 판정 결과를 바탕으로 실무자에게 명확하고 이해하기 쉬운 답변을 작성하시오. 거창한 보고서 양식은 금지하며, 현업 실무자에게 핵심 결론, 근거, 조치사항만 바로 간결하게 전달하시오.
+                    임무: 위 검증 결과를 바탕으로 외부 심사원(방문심사 업체, 인증기관) 및 사내 경영진·상급자가 직접 열람할 수 있는 수준의 명확하고 품격 있는 공식 답변을 작성하십시오.
                     
-                    💡 [범용적 프로세스 통합 원칙 (절대 규칙)]: 
-                    1. 🚨 **결론부 명확화**: 답변 최상단 첫 줄에 완제품 출하 기준의 최종 결론(조건부 승인, 추가 인증 필요성, 가능 여부 등)을 명확하게 선언하시오. 특히 품목별로 누락된 공정(예: 원액두유의 멸균/포장 인증 부재)이 있다면, "현재 상태로는 완제품 출하가 불가하며 해당 공정 추가 인증이 반드시 필요하다"고 단호하게 팩트를 짚어주시오.
-                    2. **전체 공정(숲) 제시**: 사용자가 묻는 제품/공정이 '최종 완제품화'되기 위해 거쳐야 하는 전체 공정 흐름(가공 ➔ 살균 ➔ 여과 ➔ 무균포장 등)을 먼저 명확히 요약하시오.
-                    3. **유기적 통합 설명 및 전사적 영향 파악**: 단편적인 공정 설명에 그치지 말고, 해당 변경이나 조치가 다른 라인, 선행요건, 식약처 및 FSSC22000 심사 등 외부 인증에 미칠 파급 효과(나비효과)까지 범용적으로 짚어주시오.
-                    4. **리스크 통찰**: 교차오염, CIP 검증, 규제(품목제조보고) 등 완제품 출하 시 예상되는 실무적 리스크를 종합적으로 짚어주시오."""
+                    [작성 수칙 및 어조(Tone & Manner) 절대 원칙]:
+                    1. **공식 비즈니스 경어체 엄수**: '숲', '나비효과', '퉁치다', '건바이건' 등 비유적 표현이나 구어체, 가벼운 수식어 사용을 전면 금지합니다. 철저히 정중하고 격식 있는 경어체(~합니다, ~입니다, ~바랍니다)와 정확한 식품안전 전문 용어(한계기준, 중요관리점, 유효성 평가, 변경관리, 교차오염 방지, 선행요건 등)만을 사용하여 신뢰감 있게 서술하십시오.
+                    2. **종합 판정 결론 최상단 명시**: 답변 첫 줄에 질의 사항에 대한 최종 판정 결론(현행 기준 적합 여부, 조건부 가능, 변경인증 필수 여부 등)을 두괄식으로 명확히 선언하십시오. 특히 품목별 미인증 공정이 존재하는 경우, 현 상태로는 완제품 출하가 불가하며 관할 기관의 변경인증(공정 추가)이 선행되어야 함을 명확히 명시하십시오.
+                    3. **전체 공정 체계 및 관리 기준 제시**: 해당 품목이 완제품으로 출하되기 위해 거쳐야 하는 전체 공정 흐름(전처리·가공 ➔ 살균·멸균 ➔ 여과 ➔ 무균포장 등)을 제시하고, 단계별 중요관리점(CCP) 한계기준과 모니터링 방법을 체계적으로 정리하십시오.
+                    4. **전사적 연계 영향 및 실무 관리 포인트**: 해당 사안이 타 생산 라인, 선행요건 관리기준, CIP 세척 밸리데이션, 알레르기 유발물질 교차오염 방지, 품목제조보고 및 식약처 HACCP / FSSC 22000 사후 심사에 미치는 연계 영향을 종합적으로 짚어주십시오."""
                     
                     final_chat = base_model.start_chat(history=history_for_gemini)
                     res_C = final_chat.send_message(prompt_C)
                     full_response = res_C.text
                     
-                    status.update(label="✅ 에이전트 협업 분석 완료!", state="complete", expanded=False)
+                    status.update(label="✅ 규정 검증 및 검토 의견 작성 완료", state="complete", expanded=False)
                     
                     message_placeholder.markdown(full_response)
                     st.session_state.chat_messages.append({"role": "assistant", "content": full_response})
                     
                 except Exception as e:
-                    err_msg = f"⚠️ 에이전트 파이프라인 가동 중 오류가 발생했습니다: {e}"
-                    status.update(label="🚨 오류 발생", state="error", expanded=False)
+                    err_msg = f"⚠️ 검증 시스템 가동 중 오류가 발생하였습니다: {e}"
+                    status.update(label="🚨 시스템 오류 발생", state="error", expanded=False)
                     message_placeholder.error(err_msg)
                     st.session_state.chat_messages.append({"role": "assistant", "content": err_msg})
