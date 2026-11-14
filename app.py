@@ -292,7 +292,7 @@ MASTER_SCAN_PROMPT = """본 문서의 핵심 메타데이터를 정밀하게 추
 }"""
 
 # ==========================================
-# [1] 상태 초기화 및 공식 UI 스타일 정의
+# [1] 상태 초기화 및 공식 UI 스타일 정의 (상단 잘림 완전 방지)
 # ==========================================
 if "master_cache_name" not in st.session_state:
     if os.path.exists(CACHE_META_FILE):
@@ -327,10 +327,12 @@ if "selected_doc_idx" not in st.session_state: st.session_state.selected_doc_idx
 if "selected_page_num" not in st.session_state: st.session_state.selected_page_num = 1
 if "chat_doc_viewer" not in st.session_state: st.session_state.chat_doc_viewer = None
 if "dash_status_filter" not in st.session_state: st.session_state.dash_status_filter = "기한경과_미등록"
+
+# 문서 보관함 · 등록 전용 상태 변수 (클릭 전 우측 뷰어 비활성화로 로딩 지연 차단)
 if "explorer_selected_cat" not in st.session_state: st.session_state.explorer_selected_cat = "인허가 서류"
-if "explorer_doc_idx" not in st.session_state: st.session_state.explorer_doc_idx = 0
+if "explorer_selected_folder_id" not in st.session_state: st.session_state.explorer_selected_folder_id = ""
+if "explorer_active_doc" not in st.session_state: st.session_state.explorer_active_doc = None
 if "explorer_page_num" not in st.session_state: st.session_state.explorer_page_num = 1
-if "explorer_uploaded_fid" not in st.session_state: st.session_state.explorer_uploaded_fid = ""
 
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = [{
@@ -342,7 +344,7 @@ if "chat_messages" not in st.session_state:
 custom_theme_css = """
 <style>
 @media screen {
-    .block-container { padding-top: 1.3rem !important; padding-bottom: 2rem !important; max-width: 98% !important; }
+    .block-container { padding-top: 3.8rem !important; padding-bottom: 2.5rem !important; max-width: 98% !important; }
     html, body, [class*="css"] { color: #1e293b !important; font-family: 'Pretendard', sans-serif !important; }
     [data-testid="stSidebar"] { background-color: #f8fafc !important; border-right: 1px solid #e2e8f0 !important; }
     [data-testid="stSidebar"] [data-testid="stExpander"] details { background-color: #f8fafc !important; border: 1px solid #cbd5e1 !important; border-radius: 8px !important; }
@@ -362,6 +364,7 @@ custom_theme_css = """
 
     .paper-header-box { background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
     .citation-card { background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0f172a; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+    .drive-file-row { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 6px; }
 
     table { border-collapse: collapse !important; width: 100% !important; margin: 1.2rem 0 !important; border: 2px solid #0f172a !important; border-radius: 8px !important; overflow: hidden !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1) !important; }
     thead tr { background-color: #f8fafc !important; color: #0f172a !important; border-bottom: 2px solid #0f172a !important; }
@@ -436,7 +439,7 @@ def ensure_auto_db_loaded():
             except Exception:
                 pass
 # ==========================================
-# [3] 날짜 정규화, 폴더 캐시, 클라우드 직접 업로드·AI 즉시 스캔 및 세부 분류 엔진
+# [3] 날짜 정규화, 폴더 캐시, 하위폴더 생성·업로드·자동스캔 및 세부 분류 엔진
 # ==========================================
 def _safe_ymd(y, m, d):
     try:
@@ -487,8 +490,17 @@ def parse_doc_date_tuple(filename, date_str=""):
 
 def format_iso_from_tuple(dt_tuple):
     if not dt_tuple or dt_tuple[0] <= 1900:
-        return "미상"
+        return "일자 미기재"
     return f"{dt_tuple[0]:04d}-{dt_tuple[1]:02d}-{dt_tuple[2]:02d}"
+
+def is_system_junk_file(filename):
+    """윈도우/맥 시스템 임시 파일(Thumbs.db, desktop.ini 등)을 전 구간에서 원천 제외합니다."""
+    fn_low = str(filename).strip().lower()
+    if not fn_low:
+        return True
+    if fn_low in ("thumbs.db", "desktop.ini", ".ds_store") or fn_low.startswith("~$"):
+        return True
+    return False
 
 def is_pest_vendor_doc(row_or_name, folder_path=""):
     if isinstance(row_or_name, dict):
@@ -500,7 +512,7 @@ def is_pest_vendor_doc(row_or_name, folder_path=""):
 
 def is_blacklisted(filename, category_name=""):
     fn = str(filename)
-    if "Thumbs.db" in fn or fn.endswith(".txt") or fn.endswith(".hwp"):
+    if is_system_junk_file(fn) or fn.lower().endswith(".txt") or fn.lower().endswith(".hwp"):
         return True
     if category_name in ("인증서", "특수 인증") and any(x in fn for x in ["내부 심사", "내부심사", "실시(안)", "(안)", "리스트", "계획"]):
         return True
@@ -532,7 +544,6 @@ def get_target_folder_ids(_service, root_folder_id):
 
 @st.cache_data(ttl=3600)
 def get_temp_building_root_id():
-    """별도 경로의 '가설건축물' 최상위 폴더 ID를 자동 탐색합니다."""
     service = get_drive_service()
     if not service:
         return None
@@ -550,7 +561,7 @@ def get_temp_building_root_id():
 
 @st.cache_data(ttl=1800)
 def get_subfolders_for_category(cat_name):
-    """문서 보관함에서 대분류 선택 시 하위 폴더 목록([{id, label}])을 반환합니다."""
+    """구글 드라이브 폴더 구조와 동일하게 최상위 폴더 및 모든 하위 폴더 트리 목록을 반환합니다."""
     service = get_drive_service()
     if not service:
         return []
@@ -558,8 +569,8 @@ def get_subfolders_for_category(cat_name):
     if not root_id or str(root_id).startswith("folder_id_"):
         return []
 
-    sub_list = [{"id": root_id, "label": f"📂 {cat_name} (최상위 기본 폴더)"}]
-    def walk_sub(parent_id, prefix):
+    sub_list = [{"id": root_id, "name": cat_name, "path": cat_name, "label": f"📂 {cat_name} (최상위 폴더)"}]
+    def walk_sub(parent_id, path_prefix, depth):
         page_token = None
         while True:
             try:
@@ -568,15 +579,21 @@ def get_subfolders_for_category(cat_name):
                     fields="nextPageToken, files(id, name)", orderBy="name", pageSize=200, pageToken=page_token
                 ).execute()
                 for item in res.get('files', []):
-                    lbl = f"└ 📁 {prefix}{item['name']}"
-                    sub_list.append({"id": item['id'], "label": lbl})
-                    walk_sub(item['id'], f"{prefix}{item['name']} > ")
+                    indent = " " * (depth - 1) + "└ 📁 "
+                    cur_path = f"{path_prefix} > {item['name']}"
+                    sub_list.append({
+                        "id": item['id'],
+                        "name": item['name'],
+                        "path": cur_path,
+                        "label": f"{indent}{item['name']}"
+                    })
+                    walk_sub(item['id'], cur_path, depth + 1)
                 page_token = res.get('nextPageToken')
                 if not page_token:
                     break
             except Exception:
                 break
-    walk_sub(root_id, "")
+    walk_sub(root_id, cat_name, 1)
     return sub_list
 
 @st.cache_data(ttl=1800)
@@ -638,7 +655,7 @@ def get_cached_folder_files(f_key):
                     pageSize=1000, pageToken=page_token
                 ).execute()
                 for f in res.get('files', []):
-                    if f['id'] in seen:
+                    if f['id'] in seen or is_system_junk_file(f.get('name', '')):
                         continue
                     seen.add(f['id'])
                     p_label = next((folder_map[p] for p in f.get('parents', []) if p in folder_map), f_key)
@@ -703,9 +720,33 @@ def clear_all_folder_caches():
     get_temp_building_files.clear()
     get_subfolders_for_category.clear()
     get_all_managed_folders_map.clear()
+    get_target_folder_ids.clear()
+
+def create_drive_subfolder(parent_folder_id, new_folder_name):
+    """문서 보관함에서 연도별·분류별 신규 하위 폴더를 구글 드라이브에 직접 생성합니다."""
+    drive_service = get_drive_service()
+    if not drive_service:
+        return False, "구글 드라이브 인증 서비스를 초기화할 수 없습니다."
+    clean_name = str(new_folder_name).strip()
+    if not clean_name:
+        return False, "생성할 하위 폴더명을 입력해 주십시오."
+    try:
+        meta = {
+            "name": clean_name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_folder_id]
+        }
+        created = drive_service.files().create(body=meta, fields="id, name").execute()
+        clear_all_folder_caches()
+        return True, created.get("id", "")
+    except Exception as e:
+        err_s = str(e)
+        if "403" in err_s or "insufficientPermissions" in err_s or "scope" in err_s.lower():
+            return False, "구글 드라이브 '쓰기(폴더 생성)' 권한이 없습니다. 관리자 secrets의 OAuth refresh_token을 전체 드라이브 권한(https://www.googleapis.com/auth/drive)으로 갱신해 주십시오."
+        return False, f"폴더 생성 중 오류가 발생하였습니다: {e}"
 
 def upload_and_scan_single_file(uploaded_file, target_folder_id):
-    """문서 보관함에서 신규 파일을 지정 폴더로 업로드하고 즉시 AI 메타데이터 추출 및 마스터 시트 DB에 반영합니다."""
+    """현재 선택한 구글 드라이브 폴더로 파일을 업로드하고, 즉시 AI 메타데이터 추출 및 마스터 시트 DB에 반영합니다."""
     drive_service = get_drive_service()
     sheet_service = get_sheets_service()
     if not drive_service:
@@ -721,7 +762,6 @@ def upload_and_scan_single_file(uploaded_file, target_folder_id):
     else:
         mime_type, ext = "image/jpeg", ".jpg"
 
-    # 1단계: 구글 드라이브 지정 폴더에 원본 업로드
     try:
         media = MediaIoBaseUpload(io.BytesIO(raw_bytes), mimetype=mime_type, resumable=True)
         meta_body = {"name": file_name, "parents": [target_folder_id]}
@@ -731,13 +771,12 @@ def upload_and_scan_single_file(uploaded_file, target_folder_id):
     except Exception as e:
         err_s = str(e)
         if "403" in err_s or "insufficientPermissions" in err_s or "scope" in err_s.lower():
-            return False, "구글 드라이브 '쓰기(업로드)' 권한이 없습니다. 관리자 secrets의 OAuth refresh_token을 전체 드라이브 권한(https://www.googleapis.com/auth/drive)으로 재발급해 주십시오.", None
+            return False, "구글 드라이브 '쓰기(업로드)' 권한이 없습니다. 관리자 secrets의 OAuth refresh_token을 전체 드라이브 권한(https://www.googleapis.com/auth/drive)으로 갱신해 주십시오.", None
         return False, f"클라우드 폴더 업로드 중 오류가 발생하였습니다: {e}", None
 
     fid = created.get("id")
     web_link = created.get("webViewLink", f"https://drive.google.com/file/d/{fid}/view")
 
-    # 2단계: 업로드된 문서 즉시 AI 판독 및 구글 시트(DB / SCANNED) 동기화
     tmp_path = None
     up_gemini = None
     parsed_summary = {}
@@ -803,7 +842,11 @@ def upload_and_scan_single_file(uploaded_file, target_folder_id):
             pass
 
     clear_all_folder_caches()
-    return True, fid, parsed_summary
+    doc_obj = {
+        "id": fid, "name": file_name, "webViewLink": web_link,
+        "mimeType": mime_type, "folder_path": "신규 등록 문서"
+    }
+    return True, doc_obj, parsed_summary
 
 def normalize_education_key(fname, rtitle="", reason=""):
     combined = f"{fname} {rtitle} {reason}"
@@ -1120,7 +1163,7 @@ def get_subtabs_for_category(category_key, files):
     sorted_default = sorted(files, key=lambda x: parse_doc_date_tuple(x.get('name', ''), x.get('createdTime', '')), reverse=True)
     return {f"📄 {category_key} 관련 기준 및 최신 문서": sorted_default}
 # ==========================================
-# [3-계속] 통합 검색(본문·연관제목), 고해상도 원문 뷰어 및 공식 좌측 사이드바
+# [3-계속] 통합 문서 검색(본문·연관제목), 고해상도 원문 뷰어 및 공식 좌측 사이드바
 # ==========================================
 DEEP_SEARCH_SYNONYM_GROUPS = [
     ["물탱크", "저수조", "청소필증"],
@@ -1139,7 +1182,7 @@ DEEP_SEARCH_SYNONYM_GROUPS = [
     ["보안", "식품보안", "테러", "제한구역", "통제구역", "시건장치", "cctv", "식품사기"],
     ["세척", "소독", "cip", "가성소다", "질산", "제조시설"],
     ["보관", "운반", "운송", "창고온도", "냉장", "냉동", "해동"],
-    ["협력업체", "공급업체", "원부자재", "입고검수"],
+    ["협력업체", "공급사", "판매원", "원부자재", "입고검수"],
     ["보험", "배상책임", "생산물배상", "pl보험", "책임보험"]
 ]
 
@@ -1238,17 +1281,22 @@ def render_full_height_doc_viewer(doc_info, highlight_kw="", viewer_context="tab
     mime_str = str(doc_info.get('mimeType', 'application/pdf')).lower()
 
     st.markdown("<div class='paper-header-box'>", unsafe_allow_html=True)
-    if viewer_context == "chat":
+    if viewer_context in ("chat", "explorer"):
         h1, h2, h3 = st.columns([5.8, 2.3, 1.9])
         with h1:
             st.markdown(f"**📄 {doc_name}**")
             if doc_info.get('reason'):
                 st.caption(f"📌 적용 근거: {doc_info['reason']}")
+            elif doc_info.get('folder_path'):
+                st.caption(f"📂 보관 경로: {doc_info['folder_path']}")
         with h2:
-            st.link_button("🔗 원문 별도 창 열람", view_url, use_container_width=True)
+            st.link_button("🔗 별도 창 열람", view_url, use_container_width=True)
         with h3:
-            if st.button("✖ 열람창 닫기", key=f"close_chat_v_{fid}", use_container_width=True):
-                st.session_state.chat_doc_viewer = None
+            if st.button("✖ 열람창 닫기", key=f"close_{viewer_context}_{fid}", use_container_width=True):
+                if viewer_context == "chat":
+                    st.session_state.chat_doc_viewer = None
+                else:
+                    st.session_state.explorer_active_doc = None
                 st.rerun()
     else:
         h1, h2 = st.columns([7.2, 2.8])
@@ -1280,7 +1328,7 @@ def render_full_height_doc_viewer(doc_info, highlight_kw="", viewer_context="tab
         if img_raw:
             st.image(img_raw, use_container_width=True)
         else:
-            st.components.v1.iframe(preview_url, height=980, scrolling=True)
+            st.components.v1.iframe(preview_url, height=960, scrolling=True)
         return
 
     if PYMUPDF_INSTALLED:
@@ -1335,11 +1383,11 @@ def render_full_height_doc_viewer(doc_info, highlight_kw="", viewer_context="tab
                         st.caption(f"— {p_no} / {total_p} 면 —")
                     st.image(png_bytes, use_container_width=True)
             else:
-                st.components.v1.iframe(preview_url, height=980, scrolling=True)
+                st.components.v1.iframe(preview_url, height=960, scrolling=True)
         else:
-            st.components.v1.iframe(preview_url, height=980, scrolling=True)
+            st.components.v1.iframe(preview_url, height=960, scrolling=True)
     else:
-        st.components.v1.iframe(preview_url, height=980, scrolling=True)
+        st.components.v1.iframe(preview_url, height=960, scrolling=True)
 
 def generate_on_demand_briefing(top_file, context_label=""):
     fid = top_file['id']
@@ -1409,9 +1457,7 @@ def execute_exact_match(display_keyword, folder_key=None, gw_keyword=None, prior
     })
 
     db_list = st.session_state.auto_db
-    matched_files = []
-    aux_files = []
-    seen_fids = set()
+    matched_files, aux_files, seen_fids = [], [], set()
     strict_kw_categories = {"인허가", "인증서", "특수 인증", "책임보험"}
 
     if db_list and priority_keywords:
@@ -1678,7 +1724,7 @@ def resolve_citation_to_viewer(cit_item, question_text=""):
     seen_ids = {p['id'] for p in pool}
     for row in st.session_state.auto_db:
         fid = row.get("파일 ID", "")
-        if fid and fid not in seen_ids:
+        if fid and fid not in seen_ids and not is_system_junk_file(row.get("파일명", "")):
             seen_ids.add(fid)
             pool.append({
                 'id': fid, 'name': row.get("파일명") or row.get("문서_실제제목", ""),
@@ -1784,7 +1830,7 @@ with st.sidebar:
                     for row in reversed(st.session_state.auto_db):
                         kw, fid = row.get("키워드", ""), row.get("파일 ID", "")
                         fname = row.get("문서_실제제목") or row.get("파일명", "")
-                        if not fid or fid in seen_fids:
+                        if not fid or fid in seen_fids or is_system_junk_file(fname):
                             continue
                         if kw in ("매뉴얼", "기준서", "선행요건") or "HACCP" in kw or "FSSC" in kw or "FDA" in kw or "인증" in kw:
                             seen_fids.add(fid)
@@ -2124,7 +2170,7 @@ if current_tab == MAIN_TABS[0]:
         else:
             st.info("👈 좌측 **[표준 증빙 조회]** 메뉴에서 심사 항목을 선택하거나 **[통합 문서 검색]**에 키워드를 입력하시면, 우측 전체 화면에 고해상도 원문이 즉시 표시됩니다.")
 
-# ----------------- MENU 2: 🗂️ 문서 보관함 · 등록 (전 분류 그리드 + 우측 원문 뷰어 + 드라이브 직행 업로드·자동 스캔) -----------------
+# ----------------- MENU 2: 🗂️ 문서 보관함 · 등록 (폴더 직접 탐색 + 하위폴더 생성 + 즉시 업로드·DB반영 + 선택 시에만 우측 뷰어 오픈) -----------------
 elif current_tab == MAIN_TABS[1]:
     all_archive_cats = [
         ("인허가 서류", "🏢 인허가 서류"),
@@ -2144,20 +2190,17 @@ elif current_tab == MAIN_TABS[1]:
         ("환경관리팀_폐기물계약서", "♻️ 폐기물 계약·실적")
     ]
 
-    exp_left, exp_right = st.columns([1.0, 1.4], gap="large")
-    selected_exp_doc = None
+    def render_archive_explorer_body():
+        st.markdown("#### 🗂️ 분류별 문서 보관함 탐색 및 신규 증빙 등록")
+        st.caption("구글 드라이브 폴더 구조와 동일하게 각 폴더별 보관 문서를 직접 확인하여 최신 서류를 등록·동기화하며, 열람이 필요한 문서를 클릭하면 우측 화면에 원문이 표시됩니다.")
 
-    with exp_left:
-        render_header_and_nav()
-        st.markdown("#### 🗂️ 분류별 문서 보관함 조회 및 신규 증빙 등록")
-        st.caption("보관함 분류를 선택하면 등록된 전체 문서를 우측 화면에서 즉시 열람할 수 있으며, 하단에서 신규 문서를 클라우드 폴더와 마스터 DB에 동시 등록할 수 있습니다.")
-
-        # 1단계: 15개 전 대분류 한눈에 보기 그리드 (3열 버튼)
+        # 1단계: 15개 대분류 보관함 그리드
         st.markdown("**1️⃣ 대분류 보관함 선택**")
-        grid_cols = st.columns(3)
+        grid_cols = st.columns(5 if st.session_state.explorer_active_doc is None else 3)
+        col_mod = len(grid_cols)
         for idx, (cat_key, cat_label) in enumerate(all_archive_cats):
             is_sel = (st.session_state.explorer_selected_cat == cat_key)
-            with grid_cols[idx % 3]:
+            with grid_cols[idx % col_mod]:
                 if st.button(
                     cat_label,
                     key=f"arch_cat_{cat_key}",
@@ -2165,9 +2208,9 @@ elif current_tab == MAIN_TABS[1]:
                     use_container_width=True
                 ):
                     st.session_state.explorer_selected_cat = cat_key
-                    st.session_state.explorer_doc_idx = 0
+                    st.session_state.explorer_selected_folder_id = ""
+                    st.session_state.explorer_active_doc = None
                     st.session_state.explorer_page_num = 1
-                    st.session_state.explorer_uploaded_fid = ""
                     st.rerun()
 
         cur_cat = st.session_state.explorer_selected_cat
@@ -2178,110 +2221,172 @@ elif current_tab == MAIN_TABS[1]:
             reverse=True
         )
 
-        # 2단계: 세부 하위 폴더 필터 및 문서명 빠른 필터
-        f_col1, f_col2 = st.columns([5.8, 4.2])
-        with f_col1:
-            sub_options = [{"id": "ALL", "label": f"📚 [{cur_cat}] 전체 문서 보기 ({len(cat_all_files)}건)"}] + subfolders
-            sub_labels = [s["label"] for s in sub_options]
-            chosen_sub_lbl = st.selectbox("2️⃣ 세부 하위 폴더 선택", sub_labels, key=f"sub_sel_{cur_cat}")
-            chosen_sub_obj = next((s for s in sub_options if s["label"] == chosen_sub_lbl), sub_options[0])
-        with f_col2:
-            name_filter = st.text_input("🔍 보관함 내 문서명 필터", placeholder="파일명 검색...", key=f"flt_{cur_cat}")
+        if not subfolders:
+            st.warning(f"⚠️ '{cur_cat}' 보관함의 클라우드 폴더 경로를 확인할 수 없습니다.")
+            return
 
-        filtered_docs = cat_all_files
-        if chosen_sub_obj["id"] != "ALL":
-            filtered_docs = [f for f in filtered_docs if chosen_sub_obj["id"] in f.get("parents", [])]
+        # 폴더별 직접 보유 파일 수 집계 (구글 드라이브 실제 폴더처럼 각 폴더 내부 파일 수 표시)
+        direct_counts = {}
+        for f in cat_all_files:
+            for p_id in f.get("parents", []):
+                direct_counts[p_id] = direct_counts.get(p_id, 0) + 1
+
+        folder_choices = []
+        for sf in subfolders:
+            cnt = direct_counts.get(sf["id"], 0)
+            folder_choices.append({
+                "id": sf["id"],
+                "path": sf["path"],
+                "name": sf["name"],
+                "display": f"{sf['label']}  ({cnt}건)"
+            })
+        folder_choices.append({
+            "id": "ALL",
+            "path": f"{cur_cat} (하위 폴더 포함 전체)",
+            "name": cur_cat,
+            "display": f"🔎 [{cur_cat}] 하위 폴더 포함 전체 통합 보기 ({len(cat_all_files)}건)"
+        })
+
+        # 기본 선택 폴더 인덱스 결정 (하위 폴더 생성 직후 해당 폴더로 자동 포커싱)
+        default_f_idx = 0
+        if st.session_state.explorer_selected_folder_id:
+            for f_i, fc in enumerate(folder_choices):
+                if fc["id"] == st.session_state.explorer_selected_folder_id:
+                    default_f_idx = f_i
+                    break
+        else:
+            # 최상위 폴더가 비어 있고 하위 폴더에만 파일이 있는 경우 가장 마지막 연도/하위 폴더를 기본 선택
+            if direct_counts.get(subfolders[0]["id"], 0) == 0 and len(subfolders) > 1:
+                default_f_idx = len(subfolders) - 1
+
+        st.markdown("---")
+        nav_c1, nav_c2 = st.columns([6.2, 3.8])
+        with nav_c1:
+            chosen_disp = st.selectbox(
+                "2️⃣ 세부 폴더 위치 선택 (선택한 폴더 내부의 실제 보관 파일 목록이 아래에 표시됩니다)",
+                [fc["display"] for fc in folder_choices],
+                index=default_f_idx,
+                key=f"folder_nav_{cur_cat}_{st.session_state.explorer_selected_folder_id}"
+            )
+            chosen_folder = next(fc for fc in folder_choices if fc["display"] == chosen_disp)
+            if chosen_folder["id"] != st.session_state.explorer_selected_folder_id and chosen_folder["id"] != "ALL":
+                st.session_state.explorer_selected_folder_id = chosen_folder["id"]
+        with nav_c2:
+            name_filter = st.text_input("🔍 현재 목록 내 문서명 검색", placeholder="파일명 또는 연도 입력...", key=f"flt_{cur_cat}")
+
+        # 현재 선택한 폴더의 하위 직속 폴더 바로가기 버튼 표시 (구글 드라이브 폴더 탐색 방식)
+        if chosen_folder["id"] != "ALL":
+            cur_path_prefix = chosen_folder["path"] + " > "
+            child_subfolders = [
+                sf for sf in subfolders
+                if sf["path"].startswith(cur_path_prefix) and " > " not in sf["path"][len(cur_path_prefix):]
+            ]
+            if child_subfolders:
+                st.caption(f"📁 **`{chosen_folder['path']}` 내부 하위 폴더 바로가기:**")
+                ch_cols = st.columns(min(len(child_subfolders), 4))
+                for c_idx, ch_sf in enumerate(child_subfolders):
+                    ch_cnt = direct_counts.get(ch_sf["id"], 0)
+                    with ch_cols[c_idx % len(ch_cols)]:
+                        if st.button(f"📁 {ch_sf['name']} ({ch_cnt})", key=f"jump_sf_{ch_sf['id']}", use_container_width=True):
+                            st.session_state.explorer_selected_folder_id = ch_sf["id"]
+                            st.rerun()
+
+        # 선택한 폴더 내 실제 파일 필터링
+        if chosen_folder["id"] == "ALL":
+            folder_files = cat_all_files
+        else:
+            folder_files = [f for f in cat_all_files if chosen_folder["id"] in f.get("parents", [])]
+
         if name_filter.strip():
             nf_low = name_filter.strip().lower()
-            filtered_docs = [f for f in filtered_docs if nf_low in f.get("name", "").lower()]
+            folder_files = [f for f in folder_files if nf_low in f.get("name", "").lower()]
 
-        # 3단계: 등록 문서 선택 및 우측 전체 높이 원문 연동
-        if not filtered_docs:
-            st.warning("선택하신 폴더 조건에 등록된 문서가 없습니다. 아래 등록 창에서 신규 서류를 업로드할 수 있습니다.")
+        # 3단계: 현재 폴더 내 파일 목록 및 온디맨드 원문 열람 버튼
+        st.markdown(f"**3️⃣ 현재 위치 (`{chosen_folder['path']}`) 보관 문서 목록 — 총 `{len(folder_files)}건`**")
+        if not folder_files:
+            st.info("📂 현재 선택하신 폴더에는 보관된 문서가 없습니다. 아래에서 새 하위 폴더를 만들거나 신규 파일을 바로 업로드할 수 있습니다.")
         else:
-            default_idx = 0
-            if st.session_state.explorer_uploaded_fid:
-                for i_d, d_item in enumerate(filtered_docs):
-                    if d_item['id'] == st.session_state.explorer_uploaded_fid:
-                        default_idx = i_d
-                        break
+            latest_dt = parse_doc_date_tuple(folder_files[0].get("name", ""), folder_files[0].get("createdTime", ""))
+            if latest_dt[0] > 1900:
+                st.caption(f"🕒 이 폴더의 가장 최근 문서 기준일: **{format_iso_from_tuple(latest_dt)}** (`{folder_files[0]['name']}`)")
 
-            doc_opt_map = {
-                f"{i + 1}. {d['name']}  ({format_iso_from_tuple(parse_doc_date_tuple(d['name'], d.get('createdTime', '')))})": (i, d)
-                for i, d in enumerate(filtered_docs)
-            }
-            doc_opt_keys = list(doc_opt_map.keys())
-            chosen_doc_key = st.selectbox(
-                f"3️⃣ 열람할 문서 선택 (총 {len(filtered_docs)}건 — 선택 즉시 우측 원문 표시)",
-                doc_opt_keys,
-                index=min(default_idx, len(doc_opt_keys) - 1),
-                key=f"exp_doc_sel_{cur_cat}_{chosen_sub_obj['id']}"
-            )
-            sel_i, selected_exp_doc = doc_opt_map[chosen_doc_key]
-            if sel_i != st.session_state.explorer_doc_idx:
-                st.session_state.explorer_doc_idx = sel_i
-                st.session_state.explorer_page_num = 1
+            with st.container(height=360, border=True):
+                for idx, f in enumerate(folder_files, 1):
+                    dt_str = format_iso_from_tuple(parse_doc_date_tuple(f.get("name", ""), f.get("createdTime", "")))
+                    upl_str = f.get("createdTime", "")[:10] if f.get("createdTime") else "-"
+                    is_viewing = (st.session_state.explorer_active_doc is not None and st.session_state.explorer_active_doc.get("id") == f["id"])
 
-            with st.expander(f"📋 [{cur_cat}] 전체 문서 대장 표로 보기 ({len(filtered_docs)}건)", expanded=False):
-                ledger_rows = [
-                    {
-                        "연번": idx,
-                        "문서명": f.get("name", ""),
-                        "세부 경로": f.get("folder_path", cur_cat),
-                        "등록·발급일": f.get("createdTime", "")[:10] if f.get("createdTime") else "-",
-                        "원문 링크": f.get("webViewLink", "")
-                    }
-                    for idx, f in enumerate(filtered_docs, 1)
-                ]
-                st.dataframe(ledger_rows, hide_index=True, use_container_width=True, column_config={"원문 링크": st.column_config.LinkColumn(display_text="별도 창 열람")})
+                    r1, r2, r3 = st.columns([6.4, 2.0, 1.6])
+                    with r1:
+                        path_note = f" · `{f.get('folder_path', '')}`" if chosen_folder["id"] == "ALL" else ""
+                        st.markdown(
+                            f"**{idx}. {f['name']}**  \n"
+                            f"<span style='font-size:0.83rem; color:#64748b;'>문서기준일: {dt_str} | 드라이브 등록일: {upl_str}{path_note}</span>",
+                            unsafe_allow_html=True
+                        )
+                    with r2:
+                        btn_txt = "✅ 우측 열람 중" if is_viewing else "📄 원문 열람"
+                        if st.button(btn_txt, key=f"open_exp_{f['id']}", type=("primary" if is_viewing else "secondary"), use_container_width=True):
+                            st.session_state.explorer_active_doc = f
+                            st.session_state.explorer_page_num = 1
+                            st.rerun()
+                    with r3:
+                        st.link_button("별도 창", f.get("webViewLink", f"https://drive.google.com/file/d/{f['id']}/view"), use_container_width=True)
 
-        # 4단계: 신규 증빙서류 클라우드 업로드 및 마스터 DB 즉시 동기화
+        # 4단계: 현재 폴더 기준 하위 폴더 생성 & 신규 증빙 업로드 및 자동 DB 동기화
         st.markdown("---")
-        with st.expander("📤 신규 증빙문서 등록 및 마스터 DB 자동 동기화", expanded=True):
-            if not subfolders:
-                st.warning("해당 보관함의 클라우드 폴더 경로를 확인할 수 없어 업로드가 제한됩니다.")
-            else:
-                default_upload_idx = 0
-                if chosen_sub_obj["id"] != "ALL":
-                    for s_i, s_item in enumerate(subfolders):
-                        if s_item["id"] == chosen_sub_obj["id"]:
-                            default_upload_idx = s_i
-                            break
+        target_upload_folder = subfolders[0] if chosen_folder["id"] == "ALL" else next((sf for sf in subfolders if sf["id"] == chosen_folder["id"]), subfolders[0])
 
-                up_target_lbl = st.selectbox(
-                    "저장할 대상 폴더 지정",
-                    [s["label"] for s in subfolders],
-                    index=default_upload_idx,
-                    key=f"up_target_{cur_cat}"
-                )
-                up_target_id = next(s["id"] for s in subfolders if s["label"] == up_target_lbl)
+        act_col1, act_col2 = st.columns([4.2, 5.8], gap="medium")
+        with act_col1:
+            with st.expander("➕ 현재 위치에 새 하위 폴더 생성", expanded=False):
+                st.caption(f"상위 위치: `{target_upload_folder['path']}`")
+                new_sf_name = st.text_input("신규 하위 폴더명 입력", placeholder="예: 27년도, 2027년 상반기", key=f"new_sf_{cur_cat}")
+                if st.button("📁 하위 폴더 생성 실행", use_container_width=True, key=f"btn_mk_sf_{cur_cat}"):
+                    ok_sf, res_sf = create_drive_subfolder(target_upload_folder["id"], new_sf_name)
+                    if ok_sf:
+                        st.session_state.explorer_selected_folder_id = res_sf
+                        st.success(f"✅ '{new_sf_name}' 폴더가 생성되어 해당 폴더로 이동합니다.")
+                        time.sleep(0.8)
+                        st.rerun()
+                    else:
+                        st.error(f"🚨 {res_sf}")
 
+        with act_col2:
+            with st.expander(f"📤 현재 폴더 (`{target_upload_folder['path']}`)에 신규 서류 업로드 · 자동 DB 반영", expanded=True):
                 up_file_obj = st.file_uploader(
-                    "등록할 원본 파일 첨부 (PDF, PNG, JPG 지원)",
+                    "등록할 파일 선택 (PDF, PNG, JPG — 업로드 즉시 해당 구글 드라이브 폴더 저장 및 마스터 시트 자동 반영)",
                     type=["pdf", "png", "jpg", "jpeg"],
-                    key=f"uploader_{cur_cat}"
+                    key=f"uploader_{cur_cat}_{target_upload_folder['id']}"
                 )
                 if up_file_obj is not None:
-                    if st.button("🚀 클라우드 폴더 저장 및 마스터 DB 즉시 반영", type="primary", use_container_width=True):
-                        with st.spinner(f"'{up_file_obj.name}' 파일을 구글 드라이브에 저장하고 AI 메타데이터를 추출하여 마스터 시트에 등록 중입니다..."):
-                            ok, res_msg_or_fid, meta_info = upload_and_scan_single_file(up_file_obj, up_target_id)
+                    if st.button("🚀 현재 폴더에 업로드 및 마스터 DB 즉시 동기화", type="primary", use_container_width=True, key=f"btn_up_{cur_cat}"):
+                        with st.spinner(f"'{up_file_obj.name}' 파일을 `{target_upload_folder['path']}` 폴더에 업로드하고 AI 판독 후 시트에 저장 중입니다..."):
+                            ok, doc_or_err, meta_info = upload_and_scan_single_file(up_file_obj, target_upload_folder["id"])
                         if ok:
-                            st.session_state.explorer_uploaded_fid = res_msg_or_fid
+                            doc_or_err["folder_path"] = target_upload_folder["path"]
+                            st.session_state.explorer_active_doc = doc_or_err
                             st.session_state.explorer_page_num = 1
                             st.success(
-                                f"✅ 등록 및 DB 동기화 완료: **{up_file_obj.name}**\n\n"
-                                f"• 분류 키워드: `{meta_info.get('키워드', '-')}` | 발급일: `{meta_info.get('발급일', '-')}` | 만료기한: `{meta_info.get('만료일', '-')}`"
+                                f"✅ 업로드 및 DB 동기화 완료: **{up_file_obj.name}**\n\n"
+                                f"• 저장 위치: `{target_upload_folder['path']}` | 분류코드: `{meta_info.get('키워드', '-')}` | 만료기한: `{meta_info.get('만료일', '-')}`"
                             )
-                            time.sleep(1.2)
+                            time.sleep(1.0)
                             st.rerun()
                         else:
-                            st.error(f"🚨 업로드 실패: {res_msg_or_fid}")
+                            st.error(f"🚨 업로드 실패: {doc_or_err}")
 
-    with exp_right:
-        if selected_exp_doc is not None:
-            render_full_height_doc_viewer(selected_exp_doc, highlight_kw="", viewer_context="explorer")
-        else:
-            st.info("👈 좌측 문서 보관함에서 열람할 문서를 선택하시면 우측 전체 화면에 고해상도 원문이 표시됩니다.")
+    # 문서를 직접 클릭하기 전에는 전체 폭 탐색기만 표시(로딩 지연 0초), 클릭 시에만 우측 원문 뷰어 분할 오픈
+    if st.session_state.explorer_active_doc is not None:
+        exp_left, exp_right = st.columns([1.0, 1.4], gap="large")
+        with exp_left:
+            render_header_and_nav()
+            render_archive_explorer_body()
+        with exp_right:
+            render_full_height_doc_viewer(st.session_state.explorer_active_doc, highlight_kw="", viewer_context="explorer")
+    else:
+        render_header_and_nav()
+        render_archive_explorer_body()
 
 # ----------------- MENU 3: 📊 법정 기한 현황 -----------------
 elif current_tab == MAIN_TABS[2]:
@@ -2305,7 +2410,7 @@ elif current_tab == MAIN_TABS[2]:
         fname = str(row.get("파일명", "")).strip()
         rtitle = str(row.get("문서_실제제목", "")).strip()
         reason = str(row.get("분류근거", "")).strip()
-        if not kw or kw in ("PASS", "기타", "매뉴얼", "일반수료증") or is_pest_vendor_doc(row):
+        if not kw or kw in ("PASS", "기타", "매뉴얼", "일반수료증") or is_system_junk_file(fname) or is_pest_vendor_doc(row):
             continue
 
         if kw in ("수질검사_반기", "수질검사_음용수"):
@@ -2397,7 +2502,7 @@ elif current_tab == MAIN_TABS[2]:
             return issue_clean, "영구", "-", "✅ 영구보존 (갱신불필요)", 99999
 
         expire_date = None
-        if exp_raw and exp_raw not in ("미상", "없음", "해당없음", "-"):
+        if exp_raw and exp_raw not in ("미상", "일자 미기재", "없음", "해당없음", "-"):
             try:
                 expire_date = pd.to_datetime(exp_raw).date()
             except Exception:
@@ -2549,7 +2654,7 @@ elif current_tab == MAIN_TABS[2]:
 elif current_tab == MAIN_TABS[3]:
     render_header_and_nav()
     st.markdown("### ⚙️ 클라우드 문서 일괄 AI 판독 및 마스터 DB 동기화")
-    st.caption("구글 드라이브 폴더에 직접 다수의 파일을 추가한 경우, 미등록 신규 문서만 선별하여 마스터 데이터베이스(Google Sheets)에 일괄 반영합니다.")
+    st.caption("구글 드라이브 웹에서 다수의 파일을 직접 추가한 경우, 미등록 신규 문서만 선별하여 마스터 데이터베이스(Google Sheets)에 일괄 반영합니다.")
 
     if not PYMUPDF_INSTALLED:
         st.error("🚨 고해상도 원문 뷰어 및 검색어 음영 표시를 위해 `requirements.txt`에 `PyMuPDF` 패키지를 설치해 주십시오.")
@@ -2573,8 +2678,11 @@ elif current_tab == MAIN_TABS[3]:
                         else:
                             files_to_scan.extend(get_cached_folder_files(cat))
 
-                valid_files = [f for f in files_to_scan if "pdf" in f['mimeType'].lower() or "image" in f['mimeType'].lower()]
-                st.info(f"📂 조회된 전체 파일: **{len(files_to_scan)}건** (판독 가능 PDF·이미지: **{len(valid_files)}건**)")
+                valid_files = [
+                    f for f in files_to_scan
+                    if not is_system_junk_file(f.get('name', '')) and ("pdf" in f['mimeType'].lower() or "image" in f['mimeType'].lower())
+                ]
+                st.info(f"📂 조회된 유효 파일: **{len(files_to_scan)}건** (판독 가능 PDF·이미지: **{len(valid_files)}건**)")
                 st.session_state.files_to_scan = valid_files
 
     with col2:
