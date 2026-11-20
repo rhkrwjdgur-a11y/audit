@@ -1250,7 +1250,6 @@ def render_paper_pdf_pages(file_bytes, start_page, keyword="", continuous=False,
         s_idx = max(0, min(int(start_page) - 1, total_pages - 1))
         end_idx = min(total_pages, s_idx + 4) if continuous else (s_idx + 1)
 
-        # 무의미한 일반 단어에 형광펜이 뿌려지는 것을 막는 불용어 필터
         hl_stopwords = {
             "이상", "이하", "미만", "초과", "기준", "관리", "규정", "실시", "확인", "경우",
             "관련", "사항", "절차", "보관", "유지", "작성", "보고", "점검", "해당", "대한",
@@ -1261,13 +1260,11 @@ def render_paper_pdf_pages(file_bytes, start_page, keyword="", continuous=False,
         for p_idx in range(s_idx, end_idx):
             page = doc[p_idx]
             if kw_clean:
-                # 1차: 핵심 근거 구절 전체 직접 매칭
                 rects = page.search_for(kw_clean)
                 if not rects and len(kw_clean.replace(" ", "")) >= 2:
                     rects = page.search_for(kw_clean.replace(" ", ""))
-                # 2차: 줄바꿈 등으로 문장이 끊긴 경우, 불용어를 제외한 3글자 이상 핵심 명사/조항번호만 정밀 매칭
                 if not rects:
-                     meaningful_tokens = [
+                    meaningful_tokens = [
                         t for t in re.split(r'[\s,()/·~:\-\[\]]+', kw_clean)
                         if (len(t) >= 3 or re.match(r'^\d+\.\d+', t)) and t not in hl_stopwords
                     ]
