@@ -2807,9 +2807,71 @@ elif current_tab == MAIN_TABS[3]:
 
 # ----------------- MENU 5: ⚖️ 규정 · 법규 검증 -----------------
 elif current_tab == MAIN_TABS[4]:
+    def extract_relevant_excerpts_for_chat(user_q, max_snippets=10):
+        """45개 적재 대상 기준서·선행요건·FSSC 규정 PDF에서 질문 핵심 키워드와 실제 일치하는 조항/원문 발췌본을 추출합니다."""
+        if not PYMUPDF_INSTALLED:
+            return ""
+        stop_words = {"현재", "우리", "기준서", "선행요건", "내용", "있는지", "있나요", "있어", "알려줘", "검토", "확인", "대해", "관련", "어떻게", "무엇", "따로", "정리한게", "해당"}
+        raw_tokens = [t.strip("?.!,\"'()[]") for t in re.split(r'[\s,./()·\-]+', user_q) if len(t.strip("?.!,\"'()[]")) >= 2]
+        keywords = [t for t in raw_tokens if t not in stop_words]
+        if not keywords:
+            keywords = raw_tokens[:4]
+
+        # 검색어 유의어 확장 (예: 문서관리 -> 개정, 배포, 폐기, 기록, 승인, 문서화)
+        expanded_kws = list(dict.fromkeys(keywords))
+        for kw in keywords:
+            for syn in expand_related_title_terms(kw):
+                if syn not in expanded_kws:
+                    expanded_kws.append(syn)
+            if any(x in kw for x in ["문서", "기록", "양식", "규격"]):
+                for doc_t in ["개정", "배포", "폐기", "문서화", "기록", "승인", "이력"]:
+                    if doc_t not in expanded_kws:
+                        expanded_kws.append(doc_t)
+
+        candidate_docs = []
+        seen_ids = set()
+        for sup in get_drive_supplement_files():
+            fp = sup.get("folder_path", "")
+            nm = sup.get("name", "")
+            if any(fp.startswith(k) for k in ["선행요건", "기준서", "FSSC22000", "인증서", "인허가 서류"]) and "pdf" in str(sup.get("mimeType", "")).lower():
+                if sup["id"] not in seen_ids and not is_blacklisted(nm):
+                    seen_ids.add(sup["id"])
+                    candidate_docs.append(sup)
+
+        excerpts = []
+        for doc_item in candidate_docs:
+            if len(excerpts) >= max_snippets:
+                break
+            try:
+                f_bytes = get_cached_file_bytes(doc_item["id"])
+                if not f_bytes:
+                    continue
+                pdf_doc = fitz.open(stream=f_bytes, filetype="pdf")
+                doc_hits = 0
+                for p_idx in range(len(pdf_doc)):
+                    if doc_hits >= 2 or len(excerpts) >= max_snippets:
+                        break
+                    p_txt = re.sub(r'\s+', ' ', pdf_doc[p_idx].get_text("text"))
+                    for kw in expanded_kws[:10]:
+                        m = re.search(re.escape(kw), p_txt, re.IGNORECASE)
+                        if m:
+                            s_pos = max(0, m.start() - 120)
+                            e_pos = min(len(p_txt), m.end() + 220)
+                            excerpts.append(
+                                f"- [파일명: {doc_item['name']} | 분류: {doc_item.get('folder_path', '')} | p.{p_idx + 1}] "
+                                f"...{p_txt[s_pos:e_pos]}..."
+                            )
+                            doc_hits += 1
+                            break
+                pdf_doc.close()
+            except Exception:
+                continue
+
+        return "\n".join(excerpts)
+
     def render_chat_panel_body():
-        st.markdown("### ⚖️ 사내 식품안전 기준 및 법적 인허가·인증 규격 검증")
-        st.caption("3단계 교차 검증(사내 기준 추출 ➔ 법령·인증 범위 대조 ➔ 공식 검토 보고)을 수행하며, 답변 하단의 **[1], [2] 근거 문헌**을 선택하면 우측 화면에 해당 원문 페이지가 즉시 표시됩니다.")
+        st.markdown("### ⚖️ 사내 식품안전 기준 및 규정 · 법규 교차 검증")
+        st.caption("적재된 사내 기준서·선행요건·FSSC 22000 규정 및 마스터 DB 원문만을 근거로 질문 의도를 분석하여 답변하며, 하단 **[1], [2] 근거 문헌** 클릭 시 우측 화면에 원문 해당 페이지가 즉시 열립니다.")
 
         for msg_idx, msg in enumerate(st.session_state.chat_messages):
             with st.chat_message(msg["role"]):
@@ -2847,19 +2909,22 @@ elif current_tab == MAIN_TABS[4]:
                                     else:
                                         st.warning(f"'{doc_nm}' 원문을 자동 매칭하지 못했습니다. 좌측 '통합 문서 검색'을 이용해 주십시오.")
 
-        if user_prompt := st.chat_input("검토할 공정 기준, 한계기준, 인증 범위 또는 선행요건 사항을 입력해 주십시오."):
+        if user_prompt := st.chat_input("사내 기준서 조항 유무, 관리 기준, 인증 범위 또는 현장 이력에 대해 질문해 주십시오."):
             st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
                 st.markdown(user_prompt)
 
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
-                with st.status("🛡️ 3단계 규정 및 법적 인증 범위 교차 검증 진행 중...", expanded=True) as status:
+                with st.status("🛡️ 질문 의도 분석 및 사내 원문 교차 검증 진행 중...", expanded=True) as status:
                     try:
                         ensure_auto_db_loaded()
                         kb_str = json.dumps(KNOWLEDGE_BASE, ensure_ascii=False)
                         docs_catalog = build_available_docs_catalog()
                         cache_name = st.session_state.get("master_cache_name")
+
+                        st.write("🔍 **[1단계: 원문 발췌]** 적재된 사내 기준서 및 규정 PDF에서 관련 조항 원문 탐색 중...")
+                        retrieved_excerpts = extract_relevant_excerpts_for_chat(user_prompt, max_snippets=12)
 
                         if cache_name:
                             try:
@@ -2870,35 +2935,27 @@ elif current_tab == MAIN_TABS[4]:
                         else:
                             base_model = genai.GenerativeModel(model_name=MODEL_NAME)
 
-                        st.write("📋 **[1단계: 사내 기준 추출]** 전후 연계 공정(End-to-End) 및 선행요건 관련 기준 확인 중...")
-                        prompt_A = f"""[Agent A 임무: 사내 기준 및 공정 데이터 추출]
-                        지식베이스:\n{kb_str}\n\n사용자 질의: {user_prompt}
-                        
-                        임무: 사용자의 질의에 정확히 답변하기 위한 객관적인 기준 데이터 리포트를 작성하십시오.
-                        
-                        [전 공정(End-to-End) 통합 추출 원칙]:
-                        사용자가 특정 단일 공정(예: 살균, 여과)이나 특정 반제품(예: 원액두유, 배양액)에 국한하여 질의하더라도 해당 구간만 단편적으로 추출하지 마십시오.
-                        지식베이스 및 적재된 기준서를 탐색하여 해당 품목·공정과 직결되는 [원료 수불 및 전처리 ➔ 주 가공 및 살균/멸균 ➔ 여과 ➔ 무균 충전·포장(포장지 멸균) ➔ 완제품 출하]까지의 전체 공정 체계와 이에 따른 모든 중요관리점(CCP) 및 선행요건 기준을 포괄적으로 도출하여 기술하십시오."""
-                        res_A = base_model.generate_content(prompt_A).text
+                        st.write("📋 **[2단계: 의도 파악 및 팩트 대조]** 질문 유형 판별 및 기준서·기록 분리 검증 중...")
+                        prompt_verify = f"""[임무: 질문 의도 파악 및 사내 원문 기반 팩트 추출·검증]
+                        [사용자 질문]: {user_prompt}
 
-                        st.write("⚖️ **[2단계: 법규·인증 범위 대조]** 사내 기준서 및 품목별 법적 인증 효력 교차 검증 중...")
-                        prompt_B = f"""[Agent B 임무: 법규 및 인증 규격 적격성 검수]
-                        [현재 아산공장 인증 보유 현황]: 지식베이스의 '공장현재인증현황' 참고.
-                        
-                        [Agent A가 도출한 공정 및 기준 분석 내용]:
-                        {res_A}
-                        
-                        임무: 메모리에 적재된 마스터 지식베이스, 기준서 및 실제 HACCP/FSSC22000 인증서를 대조하여 다음 기준에 따라 엄격히 교차 검증하십시오.
-                        
-                        트랙 1 (인증 범위 / 신제품 도입 / 공정 변경 질의):
-                        - [품목별 법적 독립성 엄수 원칙]: 식품위생법 및 축산물위생관리법상 HACCP 인증은 철저히 '개별 품목(유형)' 단위로 부여됩니다. 타 품목(예: 가공두유)이 무균포장 공정 인증을 보유하고 있더라도, 질의 대상 품목(예: 원액두유)이 물리적으로 동일한 설비 라인을 공유한다는 이유만으로 법적 인증 효력이 자동 승계되거나 공유되지 않습니다.
-                        - 질의 대상 품목의 인증서 및 기준서상 특정 공정(예: 여과, 살균)까지만 인증이 완료되어 있다면, "완제품 포장 출하를 위해서는 누락된 후속 공정(멸균 및 포장 등)에 대한 HACCP 변경인증(공정 추가) 및 품목제조보고를 관할 기관으로부터 사전 취득해야 함"을 법적 근거에 입각하여 명확히 판정하십시오.
-                        
-                        트랙 2 (일반 위생 규정 / 작업장 기준 / 선행요건 질의):
-                        - 작업장 환경, 개인위생, 방충방서, CIP, 보관·운송 등 일반 기준 질의는 Agent A가 추출한 수치와 주기가 사내 기준서와 정확히 일치하는지 검증하여 확정하십시오."""
-                        res_B = base_model.generate_content(prompt_B).text
+                        [사내 기준서/규정에서 직접 발췌된 관련 원문 조각]:
+                        {retrieved_excerpts if retrieved_excerpts else "직접 키워드 일치 발췌문 없음 (메모리에 적재된 45개 핵심 문서 및 아래 지식베이스를 정밀 탐색하십시오)"}
 
-                        st.write("📑 **[3단계: 공식 검토 보고서 작성]** 최종 검토 의견 및 근거 문헌 출처 연결 중...")
+                        [보조 마스터 지식베이스]:
+                        {kb_str}
+
+                        [검증 절대 원칙 - 환각 및 동문서답 원천 차단]:
+                        1. **질문 의도 정확 타겟팅**: 질문이 묻는 핵심 대상(특정 조항·내용의 유무, 규정 간 비교, 특정 공정/위생 기준 수치, 특정 품목의 인증 범위, 또는 실제 등록 이력 중 무엇인지)만 정확히 다루십시오. 질문에서 언급하지 않은 타 품목이나 무관한 공정·인증 이야기를 임의로 끌어와 덧붙이지 마십시오.
+                        2. **적재 문서 및 원문 팩트 최우선**: 메모리에 적재된 45개 문서와 위 발췌 원문에서 실제로 확인되는 파일명, 조항 번호, 수치, 규정 내용만 추출하십시오.
+                        3. **기준(Standard)과 실행(Record) 엄격 분리**: 기준서에 적힌 규정 내용만 확인된 경우, 실제 현장 기록(성적서, 일지, 훈련 결과 등)이 "빈틈없이 구비되어 있다"거나 "100% 검증 완료되었다"고 절대 추측·단정하지 마십시오. 기준서 규정과 현장 실행 증빙 확인 필요 여부를 명확히 구분하십시오.
+                        4. **근거 부재 시 사실대로 명시**: 적재된 문서와 원문 어디에도 해당 조항이나 내용이 없으면, 지어내지 말고 "적재된 기준서 본문에서는 해당 조항이 확인되지 않음"을 명확히 기록하십시오.
+                        5. **품목별 법적 독립성 원칙 (해당 질의 시에만 적용)**: 질문이 특정 품목의 신규 공정·포장·인증 범위를 묻는 경우에만, 타 품목의 인증 효력이 자동 승계되지 않음을 해당 품목 기준으로 검증하십시오.
+
+                        위 원칙에 따라 사용자 질문에 답하기 위한 검증 팩트(확인된 파일명, 조항/페이지, 원문 내용, 한계점)를 구조화하여 정리하십시오."""
+                        verified_facts = base_model.generate_content(prompt_verify).text
+
+                        st.write("📑 **[3단계: 최종 답변 구성]** 질문 맞춤형 구조화 및 근거 문헌 출처 연결 중...")
                         history_for_gemini = []
                         for m in st.session_state.chat_messages[-6:-1]:
                             if m["role"] == "assistant":
@@ -2908,31 +2965,31 @@ elif current_tab == MAIN_TABS[4]:
                             else:
                                 history_for_gemini.append({"role": "user", "parts": [m["content"]]})
 
-                        prompt_C = f"""[Agent C 임무: 공식 심사 대응 및 경영진 보고용 최종 답변 작성]
-                        [Agent B의 법규·인증 교차검증 판정 결과]:
-                        {res_B}
-                        
+                        prompt_final = f"""[임무: 질문 의도에 부합하는 면밀하고 정확한 공식 답변 작성]
+                        [사용자 질문]: {user_prompt}
+
+                        [사전 원문 검증 결과]:
+                        {verified_facts}
+
                         [현재 사내 드라이브에 실제 등록된 문서 목록]:
                         {docs_catalog}
-                        
-                        임무: 위 검증 결과를 바탕으로 외부 심사원(방문심사 업체, 인증기관) 및 사내 경영진·상급자가 직접 열람할 수 있는 수준의 명확하고 품격 있는 공식 답변을 작성하십시오.
-                        
-                        [작성 수칙 및 어조(Tone & Manner) 절대 원칙]:
-                        1. **공식 비즈니스 경어체 엄수**: '숲', '나비효과', '퉁치다', '건바이건' 등 비유적 표현이나 구어체, 가벼운 수식어 사용을 전면 금지합니다. 철저히 정중하고 격식 있는 경어체(~합니다, ~입니다, ~바랍니다)와 정확한 식품안전 전문 용어(한계기준, 중요관리점, 유효성 평가, 변경관리, 교차오염 방지, 선행요건 등)만을 사용하여 신뢰감 있게 서술하십시오.
-                        2. **종합 판정 결론 최상단 명시**: 답변 첫 줄에 질의 사항에 대한 최종 판정 결론(현행 기준 적합 여부, 조건부 가능, 변경인증 필수 여부 등)을 두괄식으로 명확히 선언하십시오. 특히 품목별 미인증 공정이 존재하는 경우, 현 상태로는 완제품 출하가 불가하며 관할 기관의 변경인증(공정 추가)이 선행되어야 함을 명확히 명시하십시오.
-                        3. **전체 공정 체계 및 관리 기준 제시**: 해당 품목이 완제품으로 출하되기 위해 거쳐야 하는 전체 공정 흐름을 제시할 때에는 화면 우측으로 잘리는 가로형 코드블록 대신 가독성 높은 마크다운 표(Table) 또는 번호 목록으로 정리하십시오. 또한 범위 표기 시 마크다운 취소선이 발생하지 않도록 물결표(~) 대신 하이픈(-)이나 '내지'를 사용하거나 정확히 표기하십시오.
-                        4. **전사적 연계 영향 및 각주 번호([1], [2]) 표기**: 답변의 핵심 판단 근거가 되는 문장 끝에 각주 번호(`[1]`, `[2]` 등, 최대 4개)를 표기하고, 답변 맨 마지막 줄 아래에 위 [현재 사내 드라이브에 실제 등록된 문서 목록]에 존재하는 실제 파일명을 기준으로 아래와 같은 정확한 `<CITATIONS>` JSON 블록을 반드시 첨부하십시오.
+
+                        [답변 작성 원칙]:
+                        1. **첫 문단 직접 결론 제시**: 불필요한 공문서 머리말(수신/발신/문서번호 등, 사용자가 공문 양식을 명시적으로 요청한 경우 제외)을 생략하고, 첫 문단에서 사용자 질문에 대한 핵심 결론(예: "있다 / 일부 조항에 분산 반영되어 있다 / 없다", 또는 해당 기준 수치·적격 여부)을 두괄식으로 명확히 답변하십시오.
+                        2. **질문 맞춤형 간결·면밀 구조**: 질문 성격에 가장 적합한 형태(조항 비교표, 불릿 리스트, 번호 정리)를 선택하여 **실제 확인된 파일명과 조항·기준 내용**을 중심으로 설명하십시오. 질문과 무관한 일반론이나 다른 품목 이야기로 분량을 늘리지 마십시오.
+                        3. **환각·과장 표현 금지**: 정중하고 신뢰감 있는 비즈니스 경어체(~합니다, ~입니다)를 사용하되, 원문에서 확인되지 않은 이행 상태를 기정사실화하는 과장 표현("완벽히 충족", "빈틈없이 구비", "100% 달성 완료" 등)을 금지하고, 확인된 기준과 별도 현장 기록 확인이 필요한 부분을 구분하여 안내하십시오. 범위 표기 시 취소선 방지를 위해 하이픈(-)이나 '내지'를 사용하십시오.
+                        4. **각주 번호([1], [2]) 및 실제 원문 출처 연결**: 근거가 된 문장 끝에 각주 번호(`[1]`, `[2]` 등, 최대 4개)를 표기하고, 답변 맨 마지막에 위 [현재 사내 드라이브에 실제 등록된 문서 목록]에 실제 존재하는 파일명을 기준으로 아래 `<CITATIONS>` JSON 블록을 첨부하십시오.
                         <CITATIONS>
                         [
-                          {{"번호": 1, "문서명": "실제 등록된 정확한 파일명", "도출사유": "이 문서를 근거로 해당 답변을 도출한 핵심 이유 1줄 요약", "핵심구절": "해당 문서 본문에서 찾아 형광펜 음영을 칠할 핵심 기준 수치 또는 구절"}}
+                          {{"번호": 1, "문서명": "실제 등록된 정확한 파일명", "도출사유": "이 문서에서 확인된 조항 및 답변 도출 근거 1줄 요약", "핵심구절": "해당 문서 본문에서 찾아 형광펜 음영을 칠할 핵심 조항명 또는 기준 구절"}}
                         ]
                         </CITATIONS>"""
 
                         final_chat = base_model.start_chat(history=history_for_gemini)
-                        res_C = final_chat.send_message(prompt_C)
-                        clean_answer, extracted_citations = parse_chatbot_citations(res_C.text)
+                        res_final = final_chat.send_message(prompt_final)
+                        clean_answer, extracted_citations = parse_chatbot_citations(res_final.text)
 
-                        status.update(label="✅ 규정 교차 검증 및 근거 출처 연결 완료", state="complete", expanded=False)
+                        status.update(label="✅ 원문 기반 교차 검증 및 출처 연결 완료", state="complete", expanded=False)
                         safe_full_response = re.sub(r'(\d)~(\d)', r'\1&#126;\2', clean_answer)
                         message_placeholder.markdown(safe_full_response, unsafe_allow_html=True)
                         st.session_state.chat_messages.append({
