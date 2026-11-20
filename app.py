@@ -1250,17 +1250,32 @@ def render_paper_pdf_pages(file_bytes, start_page, keyword="", continuous=False,
         s_idx = max(0, min(int(start_page) - 1, total_pages - 1))
         end_idx = min(total_pages, s_idx + 4) if continuous else (s_idx + 1)
 
+        # 무의미한 일반 단어에 형광펜이 뿌려지는 것을 막는 불용어 필터
+        hl_stopwords = {
+            "이상", "이하", "미만", "초과", "기준", "관리", "규정", "실시", "확인", "경우",
+            "관련", "사항", "절차", "보관", "유지", "작성", "보고", "점검", "해당", "대한",
+            "따라", "위해", "통해", "및", "등", "년", "월", "일", "회"
+        }
+
         out_images = []
         for p_idx in range(s_idx, end_idx):
             page = doc[p_idx]
             if kw_clean:
+                # 1차: 핵심 근거 구절 전체 직접 매칭
                 rects = page.search_for(kw_clean)
-                if not rects:
+                if not rects and len(kw_clean.replace(" ", "")) >= 2:
                     rects = page.search_for(kw_clean.replace(" ", ""))
+                # 2차: 줄바꿈 등으로 문장이 끊긴 경우, 불용어를 제외한 3글자 이상 핵심 명사/조항번호만 정밀 매칭
                 if not rects:
-                    for token in [t for t in re.split(r'[\s,()/·~:-]+', kw_clean) if len(t) >= 2]:
-                        rects.extend(page.search_for(token))
-                for r in rects:
+                     meaningful_tokens = [
+                        t for t in re.split(r'[\s,()/·~:\-\[\]]+', kw_clean)
+                        if (len(t) >= 3 or re.match(r'^\d+\.\d+', t)) and t not in hl_stopwords
+                    ]
+                    for token in meaningful_tokens[:4]:
+                        found_t = page.search_for(token)
+                        if found_t:
+                            rects.extend(found_t[:2])
+                for r in rects[:8]:
                     annot = page.add_highlight_annot(r)
                     annot.set_colors(stroke=(0.65, 0.92, 0.45))
                     annot.update()
@@ -2807,39 +2822,39 @@ elif current_tab == MAIN_TABS[3]:
 
 # ----------------- MENU 5: ⚖️ 규정 · 법규 검증 -----------------
 elif current_tab == MAIN_TABS[4]:
-    def extract_relevant_excerpts_for_chat(user_q, max_snippets=10):
-        """45개 적재 대상 기준서·선행요건·FSSC 규정 PDF에서 질문 핵심 키워드와 실제 일치하는 조항/원문 발췌본을 추출합니다."""
+    def extract_relevant_excerpts_for_chat(user_q, max_snippets=18):
+        """질문 핵심어와 제목이 연관된 규정(예: YS-지원-P-100 문서관리규정 등)을 1순위로 정렬하여 전 기준서에서 정확한 원문 조항을 발췌합니다."""
         if not PYMUPDF_INSTALLED:
             return ""
         stop_words = {"현재", "우리", "기준서", "선행요건", "내용", "있는지", "있나요", "있어", "알려줘", "검토", "확인", "대해", "관련", "어떻게", "무엇", "따로", "정리한게", "해당"}
         raw_tokens = [t.strip("?.!,\"'()[]") for t in re.split(r'[\s,./()·\-]+', user_q) if len(t.strip("?.!,\"'()[]")) >= 2]
-        keywords = [t for t in raw_tokens if t not in stop_words]
-        if not keywords:
-            keywords = raw_tokens[:4]
+        keywords = [t for t in raw_tokens if t not in stop_words] or raw_tokens[:4]
 
-        # 검색어 유의어 확장 (예: 문서관리 -> 개정, 배포, 폐기, 기록, 승인, 문서화)
         expanded_kws = list(dict.fromkeys(keywords))
         for kw in keywords:
             for syn in expand_related_title_terms(kw):
                 if syn not in expanded_kws:
                     expanded_kws.append(syn)
-            if any(x in kw for x in ["문서", "기록", "양식", "규격"]):
-                for doc_t in ["개정", "배포", "폐기", "문서화", "기록", "승인", "이력"]:
+            if any(x in kw for x in ["문서", "기록", "양식", "규격", "문서관리"]):
+                for doc_t in ["문서관리", "자료관리", "개정", "배포", "구본", "폐기", "문서화", "승인"]:
                     if doc_t not in expanded_kws:
                         expanded_kws.append(doc_t)
 
-        candidate_docs = []
-        seen_ids = set()
+        candidate_docs, seen_ids = [], set()
         for sup in get_drive_supplement_files():
-            fp = sup.get("folder_path", "")
-            nm = sup.get("name", "")
-            if any(fp.startswith(k) for k in ["선행요건", "기준서", "FSSC22000", "인증서", "인허가 서류"]) and "pdf" in str(sup.get("mimeType", "")).lower():
+            fp, nm = sup.get("folder_path", ""), sup.get("name", "")
+            if any(fp.startswith(k) for k in ["FSSC22000", "선행요건", "기준서", "인증서", "인허가 서류"]) and "pdf" in str(sup.get("mimeType", "")).lower():
                 if sup["id"] not in seen_ids and not is_blacklisted(nm):
                     seen_ids.add(sup["id"])
-                    candidate_docs.append(sup)
+                    # 파일명에 질문 키워드/유의어가 직접 들어간 문서를 최우선 스캔하도록 가중치 부여
+                    nm_comp = nm.replace(" ", "").lower()
+                    title_score = sum(10 for k in keywords if k.lower() in nm_comp) + sum(4 for k in expanded_kws if k.lower() in nm_comp)
+                    candidate_docs.append((title_score, sup))
+
+        candidate_docs.sort(key=lambda x: x[0], reverse=True)
 
         excerpts = []
-        for doc_item in candidate_docs:
+        for t_score, doc_item in candidate_docs[:35]:
             if len(excerpts) >= max_snippets:
                 break
             try:
@@ -2848,18 +2863,19 @@ elif current_tab == MAIN_TABS[4]:
                     continue
                 pdf_doc = fitz.open(stream=f_bytes, filetype="pdf")
                 doc_hits = 0
+                max_per_doc = 3 if t_score >= 10 else 2
                 for p_idx in range(len(pdf_doc)):
-                    if doc_hits >= 2 or len(excerpts) >= max_snippets:
+                    if doc_hits >= max_per_doc or len(excerpts) >= max_snippets:
                         break
                     p_txt = re.sub(r'\s+', ' ', pdf_doc[p_idx].get_text("text"))
-                    for kw in expanded_kws[:10]:
+                    for kw in expanded_kws[:12]:
                         m = re.search(re.escape(kw), p_txt, re.IGNORECASE)
                         if m:
                             s_pos = max(0, m.start() - 120)
-                            e_pos = min(len(p_txt), m.end() + 220)
+                            e_pos = min(len(p_txt), m.end() + 240)
                             excerpts.append(
                                 f"- [파일명: {doc_item['name']} | 분류: {doc_item.get('folder_path', '')} | p.{p_idx + 1}] "
-                                f"...{p_txt[s_pos:e_pos]}..."
+                                f"{p_txt[s_pos:e_pos]}"
                             )
                             doc_hits += 1
                             break
@@ -2869,22 +2885,129 @@ elif current_tab == MAIN_TABS[4]:
 
         return "\n".join(excerpts)
 
+    def resolve_precise_citation(cit_item, prev_user_q=""):
+        """AI가 지정한 정확한 파일명과 원문 발췌 구절(핵심구절)을 대조하여 엉뚱한 단어 매칭 없이 실제 근거 페이지만 반환합니다."""
+        doc_title = str(cit_item.get("문서명", "")).strip()
+        quote_kw = str(cit_item.get("핵심구절", "")).strip()
+        reason_txt = str(cit_item.get("도출사유", "")).strip()
+        cited_page = cit_item.get("페이지", 1)
+        try:
+            cited_page = max(1, int(re.sub(r'[^0-9]', '', str(cited_page)) or 1))
+        except Exception:
+            cited_page = 1
+
+        pool = get_drive_supplement_files() + get_temp_building_files()
+        seen_ids = {p['id'] for p in pool}
+        for row in st.session_state.auto_db:
+            fid = row.get("파일 ID", "")
+            if fid and fid not in seen_ids and not is_system_junk_file(row.get("파일명", "")):
+                seen_ids.add(fid)
+                pool.append({
+                    'id': fid, 'name': row.get("파일명") or row.get("문서_실제제목", ""),
+                    'webViewLink': row.get("뷰어 링크", f"https://drive.google.com/file/d/{fid}/view"),
+                    'mimeType': 'application/pdf', 'folder_path': row.get("키워드", "")
+                })
+
+        target_clean = re.sub(r'\.pdf$', '', doc_title, flags=re.IGNORECASE).replace(" ", "").lower()
+        title_tokens = [t.lower() for t in re.split(r'[\s_(),/\-]+', re.sub(r'\.pdf$', '', doc_title, flags=re.IGNORECASE)) if len(t) >= 2]
+
+        scored = []
+        for f in pool:
+            fn, fp = f.get('name', ''), f.get('folder_path', '')
+            fn_comp = re.sub(r'\.pdf$', '', fn, flags=re.IGNORECASE).replace(" ", "").lower()
+            full_comp = f"{fp} {fn}".replace(" ", "").lower()
+            score = 0
+            if target_clean and (target_clean == fn_comp or target_clean in fn_comp or fn_comp in target_clean):
+                score += 80
+            for tk in title_tokens:
+                if tk in full_comp:
+                    score += 12
+            if score > 0:
+                scored.append((score, parse_doc_date_tuple(fn), f))
+
+        if not scored:
+            return None
+
+        scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        best_f = scored[0][2]
+
+        # 핵심구절이 실제 존재하는 페이지 탐색 (무의미한 일반 단어로 쪼개서 엉뚱한 페이지를 잡는 현상 원천 차단)
+        if PYMUPDF_INSTALLED and "pdf" in str(best_f.get('mimeType', 'pdf')).lower() and quote_kw:
+            try:
+                f_bytes = get_cached_file_bytes(best_f['id'])
+                m_pages, _ = analyze_pdf_matches_strict(f_bytes, quote_kw)
+                if m_pages:
+                    return {
+                        'id': best_f['id'], 'name': best_f['name'],
+                        'webViewLink': best_f.get('webViewLink', f"https://drive.google.com/file/d/{best_f['id']}/view"),
+                        'mimeType': best_f.get('mimeType', 'application/pdf'),
+                        'page': m_pages[0], 'matched_pages': m_pages,
+                        'highlight_kw': quote_kw, 'reason': reason_txt
+                    }
+            except Exception:
+                pass
+
+        return {
+            'id': best_f['id'], 'name': best_f['name'],
+            'webViewLink': best_f.get('webViewLink', f"https://drive.google.com/file/d/{best_f['id']}/view"),
+            'mimeType': best_f.get('mimeType', 'application/pdf'),
+            'page': cited_page, 'matched_pages': [cited_page],
+            'highlight_kw': quote_kw, 'reason': reason_txt
+        }
+
+    def _open_citation_doc(cit, prev_user_q, doc_nm):
+        with st.spinner(f"'{doc_nm}' 해당 조항 및 음영 위치를 탐색 중입니다..."):
+            resolved = resolve_precise_citation(cit, prev_user_q=prev_user_q)
+            if resolved:
+                st.session_state.chat_doc_viewer = resolved
+                st.rerun()
+            else:
+                st.warning(f"'{doc_nm}' 원문을 자동 매칭하지 못했습니다. 좌측 '통합 문서 검색'을 이용해 주십시오.")
+
+    def _render_answer_with_inline_citations(clean_answer, cits, msg_idx, prev_user_q):
+        """본문 근거 문장 바로 우측에 인라인 원문 열람 버튼을 배치하고, 하단 출처 카드도 함께 유지합니다."""
+        cit_by_no = {}
+        for idx_c, c_obj in enumerate(cits):
+            try:
+                n_key = int(c_obj.get("번호", idx_c + 1))
+            except Exception:
+                n_key = idx_c + 1
+            cit_by_no[n_key] = c_obj
+
+        blocks = [b.strip() for b in re.split(r'\n\s*\n', clean_answer) if b.strip()]
+        for b_idx, blk in enumerate(blocks):
+            safe_blk = re.sub(r'(\d)~(\d)', r'\1&#126;\2', blk)
+            found_nos = [int(x) for x in re.findall(r'\[(\d+)\]', blk)]
+            matched_nos = [n for n in dict.fromkeys(found_nos) if n in cit_by_no]
+
+            if matched_nos and not blk.lstrip().startswith("|"):
+                t_col, btn_col = st.columns([7.7, 2.3])
+                with t_col:
+                    st.markdown(safe_blk, unsafe_allow_html=True)
+                with btn_col:
+                    for m_no in matched_nos[:2]:
+                        c_target = cit_by_no[m_no]
+                        d_nm = c_target.get("문서명", "근거 문서")
+                        if st.button(f"📄 [{m_no}] 근거 열람", key=f"inl_cit_{msg_idx}_{b_idx}_{m_no}", help=f"{d_nm} 원문 보기", use_container_width=True):
+                            _open_citation_doc(c_target, prev_user_q, d_nm)
+            else:
+                st.markdown(safe_blk, unsafe_allow_html=True)
+
     def render_chat_panel_body():
         st.markdown("### ⚖️ 사내 식품안전 기준 및 규정 · 법규 교차 검증")
-        st.caption("적재된 사내 기준서·선행요건·FSSC 22000 규정 및 마스터 DB 원문만을 근거로 질문 의도를 분석하여 답변하며, 하단 **[1], [2] 근거 문헌** 클릭 시 우측 화면에 원문 해당 페이지가 즉시 열립니다.")
+        st.caption("적재된 사내 기준서·선행요건·FSSC 22000 규정 및 마스터 DB 원문만을 근거로 답변하며, **본문 옆 `[근거 열람]` 버튼** 또는 **하단 출처 카드** 클릭 시 우측 화면에 원문 해당 페이지(근거 음영 포함)가 즉시 열립니다.")
 
         for msg_idx, msg in enumerate(st.session_state.chat_messages):
             with st.chat_message(msg["role"]):
-                safe_content = re.sub(r'(\d)~(\d)', r'\1&#126;\2', msg["content"])
-                st.markdown(safe_content, unsafe_allow_html=True)
-
                 cits = msg.get("citations", [])
-                if msg["role"] == "assistant" and cits:
-                    st.markdown("##### 📚 판단 근거 문헌 및 기준서 출처 (선택 시 우측 원문 해당 페이지 열람)")
-                    prev_user_q = ""
-                    if msg_idx > 0 and st.session_state.chat_messages[msg_idx - 1]["role"] == "user":
-                        prev_user_q = st.session_state.chat_messages[msg_idx - 1]["content"]
+                prev_user_q = ""
+                if msg_idx > 0 and st.session_state.chat_messages[msg_idx - 1]["role"] == "user":
+                    prev_user_q = st.session_state.chat_messages[msg_idx - 1]["content"]
 
+                if msg["role"] == "assistant" and cits:
+                    _render_answer_with_inline_citations(msg["content"], cits, msg_idx, prev_user_q)
+                    st.markdown("---")
+                    st.markdown("##### 📚 판단 근거 문헌 및 기준서 출처 (선택 시 우측 원문 해당 페이지 열람)")
                     for c_idx, cit in enumerate(cits):
                         num_no = cit.get("번호", c_idx + 1)
                         doc_nm = cit.get("문서명", "사내 기준서")
@@ -2901,13 +3024,10 @@ elif current_tab == MAIN_TABS[4]:
                         with cc2:
                             st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
                             if st.button(f"📄 [{num_no}] 원문 열람", key=f"cit_open_{msg_idx}_{c_idx}", type="primary", use_container_width=True):
-                                with st.spinner(f"'{doc_nm}' 해당 조항 페이지를 탐색 중입니다..."):
-                                    resolved = resolve_citation_to_viewer(cit, question_text=prev_user_q)
-                                    if resolved:
-                                        st.session_state.chat_doc_viewer = resolved
-                                        st.rerun()
-                                    else:
-                                        st.warning(f"'{doc_nm}' 원문을 자동 매칭하지 못했습니다. 좌측 '통합 문서 검색'을 이용해 주십시오.")
+                                _open_citation_doc(cit, prev_user_q, doc_nm)
+                else:
+                    safe_content = re.sub(r'(\d)~(\d)', r'\1&#126;\2', msg["content"])
+                    st.markdown(safe_content, unsafe_allow_html=True)
 
         if user_prompt := st.chat_input("사내 기준서 조항 유무, 관리 기준, 인증 범위 또는 현장 이력에 대해 질문해 주십시오."):
             st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
@@ -2923,8 +3043,8 @@ elif current_tab == MAIN_TABS[4]:
                         docs_catalog = build_available_docs_catalog()
                         cache_name = st.session_state.get("master_cache_name")
 
-                        st.write("🔍 **[1단계: 원문 발췌]** 적재된 사내 기준서 및 규정 PDF에서 관련 조항 원문 탐색 중...")
-                        retrieved_excerpts = extract_relevant_excerpts_for_chat(user_prompt, max_snippets=12)
+                        st.write("🔍 **[1단계: 원문 발췌]** 사내 FSSC 규정·선행요건·HACCP 기준서 PDF에서 관련 조항 원문 정밀 탐색 중...")
+                        retrieved_excerpts = extract_relevant_excerpts_for_chat(user_prompt, max_snippets=18)
 
                         if cache_name:
                             try:
@@ -2935,27 +3055,27 @@ elif current_tab == MAIN_TABS[4]:
                         else:
                             base_model = genai.GenerativeModel(model_name=MODEL_NAME)
 
-                        st.write("📋 **[2단계: 의도 파악 및 팩트 대조]** 질문 유형 판별 및 기준서·기록 분리 검증 중...")
-                        prompt_verify = f"""[임무: 질문 의도 파악 및 사내 원문 기반 팩트 추출·검증]
+                        st.write("📋 **[2단계: 의도 파악 및 원문 대조]** 질문 핵심 주제와 직접 일치하는 조항만 선별 검증 중...")
+                        prompt_verify = f"""[임무: 질문 의도 정확 파악 및 사내 원문 기반 팩트 검증]
                         [사용자 질문]: {user_prompt}
 
-                        [사내 기준서/규정에서 직접 발췌된 관련 원문 조각]:
-                        {retrieved_excerpts if retrieved_excerpts else "직접 키워드 일치 발췌문 없음 (메모리에 적재된 45개 핵심 문서 및 아래 지식베이스를 정밀 탐색하십시오)"}
+                        [사내 드라이브 실제 등록 문서 목록 (FSSC22000 규정·선행요건·HACCP 기준서·인증서)]:
+                        {docs_catalog}
+
+                        [사내 PDF 원문에서 직접 발췌된 관련 조항 조각]:
+                        {retrieved_excerpts if retrieved_excerpts else "직접 일치 발췌문 없음 (메모리에 적재된 45개 핵심 문서 및 아래 지식베이스를 정밀 탐색하십시오)"}
 
                         [보조 마스터 지식베이스]:
                         {kb_str}
 
-                        [검증 절대 원칙 - 환각 및 동문서답 원천 차단]:
-                        1. **질문 의도 정확 타겟팅**: 질문이 묻는 핵심 대상(특정 조항·내용의 유무, 규정 간 비교, 특정 공정/위생 기준 수치, 특정 품목의 인증 범위, 또는 실제 등록 이력 중 무엇인지)만 정확히 다루십시오. 질문에서 언급하지 않은 타 품목이나 무관한 공정·인증 이야기를 임의로 끌어와 덧붙이지 마십시오.
-                        2. **적재 문서 및 원문 팩트 최우선**: 메모리에 적재된 45개 문서와 위 발췌 원문에서 실제로 확인되는 파일명, 조항 번호, 수치, 규정 내용만 추출하십시오.
-                        3. **기준(Standard)과 실행(Record) 엄격 분리**: 기준서에 적힌 규정 내용만 확인된 경우, 실제 현장 기록(성적서, 일지, 훈련 결과 등)이 "빈틈없이 구비되어 있다"거나 "100% 검증 완료되었다"고 절대 추측·단정하지 마십시오. 기준서 규정과 현장 실행 증빙 확인 필요 여부를 명확히 구분하십시오.
-                        4. **근거 부재 시 사실대로 명시**: 적재된 문서와 원문 어디에도 해당 조항이나 내용이 없으면, 지어내지 말고 "적재된 기준서 본문에서는 해당 조항이 확인되지 않음"을 명확히 기록하십시오.
-                        5. **품목별 법적 독립성 원칙 (해당 질의 시에만 적용)**: 질문이 특정 품목의 신규 공정·포장·인증 범위를 묻는 경우에만, 타 품목의 인증 효력이 자동 승계되지 않음을 해당 품목 기준으로 검증하십시오.
-
-                        위 원칙에 따라 사용자 질문에 답하기 위한 검증 팩트(확인된 파일명, 조항/페이지, 원문 내용, 한계점)를 구조화하여 정리하십시오."""
+                        [검증 절대 원칙 - 환각·동문서답·엉뚱한 출처 연결 원천 차단]:
+                        1. **사내 실제 문서 존재 여부 정확 확인**: 위 [사내 드라이브 실제 등록 문서 목록]과 발췌문에 `YS-지원-P-100 문서관리및자료관리규정` 등 관련 규정이 실제로 존재함에도 "별도 규정이 없다"거나 "미확인"이라고 잘못 단정하지 마십시오. 먼저 목록과 발췌문을 꼼꼼히 대조하십시오.
+                        2. **질문 핵심 주제와 직접 일치하는 조항만 채택**: 예를 들어 '문서관리(제·개정, 배포, 구본 폐기, 문서 통제)'를 물었다면 실제 문서의 개정·배포·구본 폐기 조항이 담긴 문서만 근거로 채택하십시오. 모의회수 훈련 주기나 단순 보관 온도처럼 질문 핵심과 동떨어진 조항을 억지로 끌어오지 마십시오.
+                        3. **기준(Standard)과 실행 기록(Record) 엄격 분리**: 기준서에 적힌 규정 내용만 확인된 경우 "빈틈없이 구비되어 있다", "100% 검증 완료되었다" 같은 추측·과장 표현을 절대 쓰지 마십시오.
+                        4. **원문 그대로의 핵심구절 보존**: 각 근거마다 문서 본문에 실제로 적혀 있는 정확한 문구(조항 번호 포함 10~35자 내외 원문 그대로)와 페이지 번호를 함께 기록하여, 뷰어에서 정확히 그 문장에만 형광펜 음영이 칠해지도록 하십시오."""
                         verified_facts = base_model.generate_content(prompt_verify).text
 
-                        st.write("📑 **[3단계: 최종 답변 구성]** 질문 맞춤형 구조화 및 근거 문헌 출처 연결 중...")
+                        st.write("📑 **[3단계: 최종 답변 및 정밀 음영 출처 생성]** 본문 근거 연결 및 원문 문구 매핑 중...")
                         history_for_gemini = []
                         for m in st.session_state.chat_messages[-6:-1]:
                             if m["role"] == "assistant":
@@ -2965,23 +3085,24 @@ elif current_tab == MAIN_TABS[4]:
                             else:
                                 history_for_gemini.append({"role": "user", "parts": [m["content"]]})
 
-                        prompt_final = f"""[임무: 질문 의도에 부합하는 면밀하고 정확한 공식 답변 작성]
+                        prompt_final = f"""[임무: 질문 의도에 부합하는 면밀하고 정확한 공식 답변 및 정밀 출처 작성]
                         [사용자 질문]: {user_prompt}
 
                         [사전 원문 검증 결과]:
                         {verified_facts}
 
-                        [현재 사내 드라이브에 실제 등록된 문서 목록]:
+                        [사내 드라이브 실제 등록 문서 목록]:
                         {docs_catalog}
 
                         [답변 작성 원칙]:
-                        1. **첫 문단 직접 결론 제시**: 불필요한 공문서 머리말(수신/발신/문서번호 등, 사용자가 공문 양식을 명시적으로 요청한 경우 제외)을 생략하고, 첫 문단에서 사용자 질문에 대한 핵심 결론(예: "있다 / 일부 조항에 분산 반영되어 있다 / 없다", 또는 해당 기준 수치·적격 여부)을 두괄식으로 명확히 답변하십시오.
-                        2. **질문 맞춤형 간결·면밀 구조**: 질문 성격에 가장 적합한 형태(조항 비교표, 불릿 리스트, 번호 정리)를 선택하여 **실제 확인된 파일명과 조항·기준 내용**을 중심으로 설명하십시오. 질문과 무관한 일반론이나 다른 품목 이야기로 분량을 늘리지 마십시오.
-                        3. **환각·과장 표현 금지**: 정중하고 신뢰감 있는 비즈니스 경어체(~합니다, ~입니다)를 사용하되, 원문에서 확인되지 않은 이행 상태를 기정사실화하는 과장 표현("완벽히 충족", "빈틈없이 구비", "100% 달성 완료" 등)을 금지하고, 확인된 기준과 별도 현장 기록 확인이 필요한 부분을 구분하여 안내하십시오. 범위 표기 시 취소선 방지를 위해 하이픈(-)이나 '내지'를 사용하십시오.
-                        4. **각주 번호([1], [2]) 및 실제 원문 출처 연결**: 근거가 된 문장 끝에 각주 번호(`[1]`, `[2]` 등, 최대 4개)를 표기하고, 답변 맨 마지막에 위 [현재 사내 드라이브에 실제 등록된 문서 목록]에 실제 존재하는 파일명을 기준으로 아래 `<CITATIONS>` JSON 블록을 첨부하십시오.
+                        1. **첫 문단 직접 결론 제시**: 불필요한 공문서 머리말(수신/발신/문서번호 등)을 생략하고, 첫 문단에서 사용자 질문에 대한 핵심 결론을 두괄식으로 명확히 답변하십시오.
+                        2. **질문 맞춤형 면밀 구조**: 확인된 실제 파일명과 조항 번호·원문 기준을 중심으로 표 또는 항목별로 명확히 비교·정리하십시오. 질문과 무관한 타 품목이나 엉뚱한 조항으로 분량을 늘리지 마십시오.
+                        3. **환각·과장 표현 금지**: 정중한 비즈니스 경어체(~합니다, ~입니다)를 사용하되, 확인되지 않은 이행 상태를 기정사실화하는 과장 표현을 금지하십시오. 숫자 범위 표기 시 취소선 방지를 위해 물결표 대신 하이픈(-)이나 '내지'를 사용하십시오.
+                        4. **각주 번호([1], [2]) 및 원문 그대로의 핵심구절 매핑**: 핵심 판단 근거가 되는 문장 끝에 각주 번호(`[1]`, `[2]` 등, 최대 4개)를 표기하고, 답변 맨 마지막에 위 [사내 드라이브 실제 등록 문서 목록]의 정확한 파일명을 기준으로 아래 `<CITATIONS>` JSON 블록을 반드시 첨부하십시오.
+                           - `"핵심구절"`에는 요약문이 아니라 **해당 PDF 페이지 본문에 실제로 그대로 적혀 있는 원문 구절(10~30자 내외, 예: "6.4 규격의 개정" 또는 "최신본을 배포하고 구본은 폐기")**만 정확히 기재하십시오.
                         <CITATIONS>
                         [
-                          {{"번호": 1, "문서명": "실제 등록된 정확한 파일명", "도출사유": "이 문서에서 확인된 조항 및 답변 도출 근거 1줄 요약", "핵심구절": "해당 문서 본문에서 찾아 형광펜 음영을 칠할 핵심 조항명 또는 기준 구절"}}
+                          {{"번호": 1, "문서명": "실제 등록된 정확한 파일명.pdf", "페이지": 1, "도출사유": "이 조항을 근거로 답변을 도출한 이유 1줄 요약", "핵심구절": "PDF 본문에 실제로 적혀 있는 정확한 원문 구절"}}
                         ]
                         </CITATIONS>"""
 
@@ -2989,7 +3110,7 @@ elif current_tab == MAIN_TABS[4]:
                         res_final = final_chat.send_message(prompt_final)
                         clean_answer, extracted_citations = parse_chatbot_citations(res_final.text)
 
-                        status.update(label="✅ 원문 기반 교차 검증 및 출처 연결 완료", state="complete", expanded=False)
+                        status.update(label="✅ 원문 기반 교차 검증 및 정밀 음영 출처 연결 완료", state="complete", expanded=False)
                         safe_full_response = re.sub(r'(\d)~(\d)', r'\1&#126;\2', clean_answer)
                         message_placeholder.markdown(safe_full_response, unsafe_allow_html=True)
                         st.session_state.chat_messages.append({
